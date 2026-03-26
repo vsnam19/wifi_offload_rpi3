@@ -8,7 +8,7 @@
 ## ⚡ Active Tasks
 
 **Current phase:** Phase 0 — Yocto Foundation
-**Current task:** `P0-T9` — Write `CMakeLists.txt` with C++23 flags
+**Current task:** `P0-T10` — Verify: `kas build` succeeds, image boots, daemon starts
 
 **Do this task only. Do not proceed to next task without human confirmation.**
 
@@ -161,7 +161,7 @@ wifi-offload-project/                   ← Root repository
 | P0-T6 | Write `wifi-offload-manager.bb` recipe (skeleton binary) | ✅ |
 | P0-T7 | Write `wifi-offload-manager.service` systemd unit | ✅ |
 | P0-T8 | Write daemon skeleton `main.cpp` (starts, logs, exits cleanly) | ✅ |
-| P0-T9 | Write `CMakeLists.txt` with C++23 flags | ⬜ |
+| P0-T9 | Write `CMakeLists.txt` with C++23 flags | ✅ |
 | P0-T10 | Verify: `kas build` succeeds, image boots, daemon starts | ⬜ |
 
 **Definition of Done:**
