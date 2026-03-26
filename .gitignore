@@ -1,0 +1,18 @@
+# Yocto build artifacts
+build/
+downloads/
+sstate-cache/
+tmp/
+*.pyc
+__pycache__/
+
+# kas artifacts
+.kas-status.yml
+
+# Editor artifacts
+*.swp
+*.swo
+*~
+
+# OS artifacts
+.DS_Store
