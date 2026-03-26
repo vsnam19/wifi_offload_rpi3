@@ -6,15 +6,13 @@ Wants=network-pre.target
 Requires=wpa_supplicant.service
 
 [Service]
-Type=notify
+# Type=simple: daemon does not call sd_notify() yet.
+# P6-T3: change to Type=notify and add WatchdogSec=30s once Phase 6 watchdog
+#         integration is implemented in the daemon.
+Type=simple
 ExecStart=/usr/sbin/wifi-offload-manager --config /etc/netservice/path-policies.json
 Restart=on-failure
 RestartSec=5s
-
-# systemd watchdog — daemon must call sd_notify(WATCHDOG=1) every 25 s
-# P6-T3: WatchdogSec=30s will be enabled in Phase 6 once the watchdog
-#         keepalive is implemented in the daemon.
-# WatchdogSec=30s
 
 # Runtime directory for the control socket
 RuntimeDirectory=netservice

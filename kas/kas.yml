@@ -8,7 +8,7 @@
 header:
   version: 14
   includes:
-    - machine/rpi3.yml
+    - kas/machine/rpi3.yml
 
 distro: poky
 target: netservice-image
@@ -37,12 +37,12 @@ repos:
     url: https://git.yoctoproject.org/meta-raspberrypi
     branch: scarthgap
     layers:
-      meta-raspberrypi:
+      .:  # layer conf is at repo root, not in a meta-raspberrypi/ subdir
 
   meta-netservice:
     path: meta-netservice
     layers:
-      meta-netservice:
+      .:  # layer conf is at path root (meta-netservice/conf/layer.conf)
 
 local_conf_header:
   standard: |
@@ -54,6 +54,17 @@ local_conf_header:
     # Development image features; remove debug-tweaks for production
     EXTRA_IMAGE_FEATURES ?= "debug-tweaks ssh-server-openssh"
 
+    # ── systemd as init manager ───────────────────────────────────
+    # poky distro defaults to sysvinit; these three lines switch it to systemd.
+    # usrmerge is required by systemd in Scarthgap (merged /usr layout).
+    DISTRO_FEATURES:append = " systemd usrmerge"
+    VIRTUAL-RUNTIME_init_manager = "systemd"
+    VIRTUAL-RUNTIME_initscripts = "systemd-compat-units"
+    # ── Firmware license acceptance ──────────────────────────────────
+    # RPi3B+ onboard BCM43430 WiFi chip uses linux-firmware-rpidistro which
+    # carries a 'synaptics-killswitch' restricted license.  Must be explicitly
+    # accepted to build the firmware package.
+    LICENSE_FLAGS_ACCEPTED:append = " synaptics-killswitch"
     USER_CLASSES ?= "buildstats"
     PATCHRESOLVE = "noop"
 

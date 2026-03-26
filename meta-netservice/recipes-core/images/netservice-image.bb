@@ -19,9 +19,10 @@ IMAGE_INSTALL:append = " \
     kernel-modules \
     libmnl \
     nlohmann-json \
-    openssh \
-    systemd \
 "
+# Note: openssh is installed via IMAGE_FEATURES += ssh-server-openssh above.
+# Note: systemd is selected as init manager via VIRTUAL-RUNTIME_init_manager
+#       in local_conf_header — do NOT add it to IMAGE_INSTALL.
 
 # ── Image size ────────────────────────────────────────────────────
 # 256 MB rootfs is ample for a headless daemon image

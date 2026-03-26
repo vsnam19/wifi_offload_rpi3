@@ -7,13 +7,14 @@
 
 ## ⚡ Active Tasks
 
-**Current phase:** Phase 1 — Config Loader
-**Current task:** `P1-T5` — Integrate into `main.cpp` — load config at startup ✅ — Phase 1 complete
+**Current phase:** Phase 0 — Yocto Build Validation
+**Current task:** `P0-T10` — Run `kas build`, flash image, verify on Pi 3B+
 
-> P0-T10 (hardware verify) requires `kas build` + Pi — pending physical setup.
-> P1-T1 (`PathClassConfig` struct) was completed as part of P0-T8 (in `common/types.hpp`).
+> All source files and Yocto layer files verified/fixed (P0-T1 through P0-T8/T9).
+> P0-T10 requires physical Raspberry Pi 3B+ and kas build execution.
+> Phase 1 (Config Loader) is already complete and will ship in the image.
 
-**Do this task only. Do not proceed to next task without human confirmation.**
+**Do this task only. Do not proceed to Phase 2 without human confirmation.**
 
 ---
 
@@ -166,7 +167,6 @@ wifi-offload-project/                   ← Root repository
 | P0-T8 | Write daemon skeleton `main.cpp` (starts, logs, exits cleanly) | ✅ |
 | P0-T9 | Write `CMakeLists.txt` with C++23 flags | ✅ |
 | P0-T10 | Verify: `kas build` succeeds, image boots, daemon starts | ⬜ |
-
 **Definition of Done:**
 ```bash
 ssh root@<pi-ip>

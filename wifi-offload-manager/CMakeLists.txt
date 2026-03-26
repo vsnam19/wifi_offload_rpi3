@@ -7,13 +7,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # ── Dependencies ──────────────────────────────────────────────────
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(LIBMNL REQUIRED libmnl)
+# Use find_library/find_path for libmnl — works in both native and Yocto
+# cross-compile environments without requiring pkg-config in the sysroot.
+find_library(LIBMNL_LIBRARY NAMES mnl REQUIRED)
+find_path(LIBMNL_INCLUDE_DIR NAMES libmnl/libmnl.h REQUIRED)
 
-# nlohmann/json — header-only; find via cmake config or fall back to pkg-config
+# nlohmann/json — header-only; CMake config package (preferred in Yocto sysroot)
 find_package(nlohmann_json QUIET)
 if(NOT nlohmann_json_FOUND)
-    pkg_check_modules(NLOHMANN_JSON REQUIRED nlohmann_json)
+    # Fallback: locate the header directory directly
+    find_path(NLOHMANN_JSON_INCLUDE_DIR NAMES nlohmann/json.hpp REQUIRED)
 endif()
 
 # ── Sources ───────────────────────────────────────────────────────
@@ -30,17 +33,17 @@ add_executable(wifi-offload-manager
 
 target_include_directories(wifi-offload-manager PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${LIBMNL_INCLUDE_DIRS}
+    ${LIBMNL_INCLUDE_DIR}
 )
 
 target_link_libraries(wifi-offload-manager PRIVATE
-    ${LIBMNL_LIBRARIES}
+    ${LIBMNL_LIBRARY}
 )
 
 if(nlohmann_json_FOUND)
     target_link_libraries(wifi-offload-manager PRIVATE nlohmann_json::nlohmann_json)
 else()
-    target_include_directories(wifi-offload-manager PRIVATE ${NLOHMANN_JSON_INCLUDE_DIRS})
+    target_include_directories(wifi-offload-manager PRIVATE ${NLOHMANN_JSON_INCLUDE_DIR})
 endif()
 
 # ── Compiler flags ────────────────────────────────────────────────
