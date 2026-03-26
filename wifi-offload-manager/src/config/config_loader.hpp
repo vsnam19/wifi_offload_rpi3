@@ -9,6 +9,8 @@
 #include "common/error.hpp"
 #include "common/types.hpp"
 
+#include <nlohmann/json.hpp>
+
 #include <expected>
 #include <filesystem>
 #include <vector>

@@ -64,7 +64,7 @@ int main(int argc, char* argv[]) {
         logger::close();
         return EXIT_FAILURE;
     }
-    const auto& pathClasses = configResult.value();
+    [[maybe_unused]] const auto& pathClasses = configResult.value();
 
     // TODO Phase 2: pass pathClasses to RoutingPolicyManager
     // TODO Phase 3: pass pathClasses to WpaMonitor
