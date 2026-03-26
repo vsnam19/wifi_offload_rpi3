@@ -1,0 +1,37 @@
+[Unit]
+Description=WiFi Offload Manager — multi-path network infrastructure service
+Documentation=file:///etc/netservice/path-policies.json
+After=network-pre.target wpa_supplicant.service
+Wants=network-pre.target
+Requires=wpa_supplicant.service
+
+[Service]
+Type=notify
+ExecStart=/usr/sbin/wifi-offload-manager --config /etc/netservice/path-policies.json
+Restart=on-failure
+RestartSec=5s
+
+# systemd watchdog — daemon must call sd_notify(WATCHDOG=1) every 25 s
+# P6-T3: WatchdogSec=30s will be enabled in Phase 6 once the watchdog
+#         keepalive is implemented in the daemon.
+# WatchdogSec=30s
+
+# Runtime directory for the control socket
+RuntimeDirectory=netservice
+RuntimeDirectoryMode=0755
+
+# Hardening
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/sys/fs/cgroup/net_cls /etc/netservice /run/netservice
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wifi-offload-manager
+
+[Install]
+WantedBy=multi-user.target

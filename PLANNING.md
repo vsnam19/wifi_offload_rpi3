@@ -8,7 +8,7 @@
 ## ⚡ Active Tasks
 
 **Current phase:** Phase 0 — Yocto Foundation
-**Current task:** `P0-T2` — Write `kas.yml` + machine overlay `kas/machine/rpi3.yml`
+**Current task:** `P0-T9` — Write `CMakeLists.txt` with C++23 flags
 
 **Do this task only. Do not proceed to next task without human confirmation.**
 
@@ -154,13 +154,13 @@ wifi-offload-project/                   ← Root repository
 | Task | Description | Status |
 |---|---|---|
 | P0-T1 | Create full project directory structure | ✅ |
-| P0-T2 | Write `kas.yml` + machine overlay `kas/machine/rpi3.yml` | ⬜ |
-| P0-T3 | Write `meta-netservice/conf/layer.conf` | ⬜ |
-| P0-T4 | Write `netservice.cfg` kernel fragment + `.bbappend` | ⬜ |
-| P0-T5 | Write `netservice-image.bb` image recipe | ⬜ |
-| P0-T6 | Write `wifi-offload-manager.bb` recipe (skeleton binary) | ⬜ |
-| P0-T7 | Write `wifi-offload-manager.service` systemd unit | ⬜ |
-| P0-T8 | Write daemon skeleton `main.cpp` (starts, logs, exits cleanly) | ⬜ |
+| P0-T2 | Write `kas.yml` + machine overlay `kas/machine/rpi3.yml` | ✅ |
+| P0-T3 | Write `meta-netservice/conf/layer.conf` | ✅ |
+| P0-T4 | Write `netservice.cfg` kernel fragment + `.bbappend` | ✅ |
+| P0-T5 | Write `netservice-image.bb` image recipe | ✅ |
+| P0-T6 | Write `wifi-offload-manager.bb` recipe (skeleton binary) | ✅ |
+| P0-T7 | Write `wifi-offload-manager.service` systemd unit | ✅ |
+| P0-T8 | Write daemon skeleton `main.cpp` (starts, logs, exits cleanly) | ✅ |
 | P0-T9 | Write `CMakeLists.txt` with C++23 flags | ⬜ |
 | P0-T10 | Verify: `kas build` succeeds, image boots, daemon starts | ⬜ |
 

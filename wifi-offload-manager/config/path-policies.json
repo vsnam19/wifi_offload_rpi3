@@ -1,0 +1,39 @@
+{
+  "path_classes": [
+    {
+      "id":               "multipath",
+      "classid":          "0x00100001",
+      "cgroup_path":      "/sys/fs/cgroup/net_cls/multipath",
+      "interfaces":       ["wlan0", "wwan0"],
+      "mptcp_enabled":    true,
+      "routing_table":    100,
+      "mark":             "0x10",
+      "strict_isolation": false,
+      "rssi": {
+        "connect_min":    -70,
+        "warn":           -75,
+        "drop":           -85
+      }
+    },
+    {
+      "id":               "lte_b2c",
+      "classid":          "0x00100002",
+      "cgroup_path":      "/sys/fs/cgroup/net_cls/lte_b2c",
+      "interfaces":       ["wwan0"],
+      "mptcp_enabled":    false,
+      "routing_table":    200,
+      "mark":             "0x20",
+      "strict_isolation": false
+    },
+    {
+      "id":               "lte_b2b",
+      "classid":          "0x00100003",
+      "cgroup_path":      "/sys/fs/cgroup/net_cls/lte_b2b",
+      "interfaces":       ["wwan1"],
+      "mptcp_enabled":    false,
+      "routing_table":    300,
+      "mark":             "0x30",
+      "strict_isolation": true
+    }
+  ]
+}
