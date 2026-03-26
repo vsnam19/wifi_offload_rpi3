@@ -16,3 +16,4 @@ __pycache__/
 
 # OS artifacts
 .DS_Store
+.gitnexus
