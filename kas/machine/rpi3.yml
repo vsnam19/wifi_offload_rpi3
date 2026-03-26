@@ -1,0 +1,33 @@
+# Raspberry Pi 3B+ machine overlay
+# Included automatically by kas/kas.yml
+# Override with: kas build kas/kas.yml:kas/machine/<other>.yml
+
+header:
+  version: 14
+
+machine: raspberrypi3
+
+local_conf_header:
+  rpi3-overrides: |
+    # ── Serial console ────────────────────────────────────────────
+    # Enables ttyAMA0 (serial0) for UART console access.
+    # Required: disables BT to free the full-speed UART from the
+    # Bluetooth controller (RPi3B+ routes BT through ttyAMA0 by default).
+    ENABLE_UART = "1"
+    RPI_EXTRA_CONFIG:append = "\ndtoverlay=disable-bt\n"
+
+    # ── Memory split ──────────────────────────────────────────────
+    # Headless daemon — allocate minimum GPU memory (16 MB floor).
+    GPU_MEM = "16"
+
+    # ── Display ───────────────────────────────────────────────────
+    DISABLE_OVERSCAN = "1"
+
+    # ── Kernel ────────────────────────────────────────────────────
+    # linux-raspberrypi 6.6 LTS is the Scarthgap default for this BSP;
+    # no explicit PREFERRED_PROVIDER needed unless switching to mainline.
+
+    # ── WiFi regulatory domain ────────────────────────────────────
+    # Set country code so the onboard brcmfmac driver is licensed to
+    # use 5 GHz channels.  Update to match lab/deployment country.
+    RPI_EXTRA_CONFIG:append = "\ncountry=US\n"

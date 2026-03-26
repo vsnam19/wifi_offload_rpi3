@@ -1,0 +1,70 @@
+# WiFi Offload Manager — Main kas build configuration
+# Target: Raspberry Pi 3B+ (prototype), Yocto Scarthgap 5.0
+# Usage: kas build kas/kas.yml
+#
+# To switch machine, override: kas build kas/kas.yml:kas/machine/<machine>.yml
+# (current default is rpi3 via includes below)
+
+header:
+  version: 14
+  includes:
+    - machine/rpi3.yml
+
+distro: poky
+target: netservice-image
+
+build_system: oe
+
+repos:
+  poky:
+    url: https://git.yoctoproject.org/poky
+    branch: scarthgap
+    layers:
+      meta:
+      meta-poky:
+      meta-yocto-bsp:
+
+  meta-openembedded:
+    url: https://github.com/openembedded/meta-openembedded
+    branch: scarthgap
+    layers:
+      meta-oe:
+      meta-networking:
+      meta-python:
+      meta-filesystems:
+
+  meta-raspberrypi:
+    url: https://git.yoctoproject.org/meta-raspberrypi
+    branch: scarthgap
+    layers:
+      meta-raspberrypi:
+
+  meta-netservice:
+    path: meta-netservice
+    layers:
+      meta-netservice:
+
+local_conf_header:
+  standard: |
+    CONF_VERSION = "2"
+
+    # Use IPK packages — lightweight for embedded targets
+    PACKAGE_CLASSES = "package_ipk"
+
+    # Development image features; remove debug-tweaks for production
+    EXTRA_IMAGE_FEATURES ?= "debug-tweaks ssh-server-openssh"
+
+    USER_CLASSES ?= "buildstats"
+    PATCHRESOLVE = "noop"
+
+    # Disk space guards — abort before the build host runs out of space
+    BB_DISKMON_DIRS ??= "\
+      STOPTASKS,${TMPDIR},1G,100K \
+      STOPTASKS,${DL_DIR},1G,100K \
+      STOPTASKS,${SSTATE_DIR},1G,100K \
+      STOPTASKS,/tmp,100M,100K \
+      HALT,${TMPDIR},100M,1K \
+      HALT,${DL_DIR},100M,1K \
+      HALT,${SSTATE_DIR},100M,1K \
+      HALT,/tmp,10M,1K \
+    "
