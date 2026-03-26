@@ -19,8 +19,8 @@ endif()
 # ── Sources ───────────────────────────────────────────────────────
 add_executable(wifi-offload-manager
     src/main.cpp
-    # Phase 1+:
-    # src/config/config_loader.cpp
+    src/config/config_loader.cpp
+    # Phase 2+:
     # src/routing/routing_policy_manager.cpp
     # src/mptcp/mptcp_manager.cpp
     # src/wpa/wpa_monitor.cpp
@@ -66,7 +66,7 @@ install(FILES config/path-policies.json
 )
 
 # ── Tests (stubbed — activated when Phase 1 unit tests are written) ──
-option(BUILD_TESTS "Build unit tests" OFF)
+option(BUILD_TESTS "Build unit tests" ON)
 if(BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)

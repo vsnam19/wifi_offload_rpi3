@@ -1,16 +1,12 @@
 // main.cpp — WiFi Offload Manager daemon entry point
-//
-// Phase 0 skeleton: opens syslog, installs signal handlers, and blocks
-// until SIGTERM/SIGINT.  Each subsequent phase will plug its module in
-// between the "startup" and the main event loop.
 
 #include "common/logger.hpp"
+#include "config/config_loader.hpp"
 
 #include <atomic>
 #include <csignal>
 #include <cstdlib>
 #include <filesystem>
-#include <print>
 #include <span>
 #include <string_view>
 
@@ -22,12 +18,11 @@ static constexpr std::string_view kDefaultConfigPath =
 static std::atomic<bool> gShutdown{false};
 
 static void handleSignal(int sig) noexcept {
-    // async-signal-safe: only write to atomic flag and syslog
     gShutdown.store(true, std::memory_order_relaxed);
     (void)sig;
 }
 
-// ── Argument parsing (minimal) ───────────────────────────────────
+// ── Argument parsing ─────────────────────────────────────────────
 struct Args {
     std::string_view configPath{kDefaultConfigPath};
 };
@@ -60,30 +55,32 @@ int main(int argc, char* argv[]) {
     sigaction(SIGTERM, &sa, nullptr);
     sigaction(SIGINT,  &sa, nullptr);
 
-    // Verify config file exists (full load deferred to Phase 1)
-    if (!std::filesystem::exists(std::filesystem::path{args.configPath})) {
-        logger::error("[MAIN] config file not found: {}", args.configPath);
+    // ── Phase 1: load config ──────────────────────────────────────
+    auto configResult = netservice::ConfigLoader::loadFromFile(
+        std::filesystem::path{args.configPath});
+    if (!configResult) {
+        logger::error("[MAIN] failed to load config: {}",
+            netservice::toString(configResult.error()));
         logger::close();
         return EXIT_FAILURE;
     }
+    const auto& pathClasses = configResult.value();
+
+    // TODO Phase 2: pass pathClasses to RoutingPolicyManager
+    // TODO Phase 3: pass pathClasses to WpaMonitor
+    // TODO Phase 4: pass pathClasses to PathStateFsm
+    // TODO Phase 5: pass pathClasses to ConsumerApiServer
 
     logger::info("[MAIN] startup complete — entering event loop");
 
-    // ── Main event loop (placeholder — Phase 1+ will add epoll/poll) ──
+    // ── Main event loop (Phase 3+ will replace pause() with epoll) ──
     while (!gShutdown.load(std::memory_order_relaxed)) {
-        // TODO Phase 1: drive config loader
-        // TODO Phase 2: drive routing policy manager
-        // TODO Phase 3: drive wpa_monitor event loop
-        // TODO Phase 4: drive path state FSM
-        // TODO Phase 5: drive consumer API server
-
-        pause(); // sleep until any signal arrives
+        pause();
     }
 
     logger::info("[MAIN] SIGTERM received — shutting down");
 
     // TODO Phase 2: cleanup routing rules and cgroups
-    // TODO Phase 3: disconnect wpa_ctrl
 
     logger::info("[MAIN] shutdown complete");
     logger::close();

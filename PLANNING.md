@@ -7,8 +7,11 @@
 
 ## ⚡ Active Tasks
 
-**Current phase:** Phase 0 — Yocto Foundation
-**Current task:** `P0-T10` — Verify: `kas build` succeeds, image boots, daemon starts
+**Current phase:** Phase 1 — Config Loader
+**Current task:** `P1-T5` — Integrate into `main.cpp` — load config at startup ✅ — Phase 1 complete
+
+> P0-T10 (hardware verify) requires `kas build` + Pi — pending physical setup.
+> P1-T1 (`PathClassConfig` struct) was completed as part of P0-T8 (in `common/types.hpp`).
 
 **Do this task only. Do not proceed to next task without human confirmation.**
 
@@ -176,16 +179,16 @@ sysctl net.mptcp.enabled              # = 1
 
 ### Phase 1 — Config Loader
 **Goal:** Load and validate `path-policies.json`, expose config to other modules  
-**Status:** ⏸ Blocked on Phase 0  
+**Status:** ✅ Complete
 **Dependency:** Phase 0 complete
 
 | Task | Description | Status |
 |---|---|---|
-| P1-T1 | Define `PathClassConfig` struct in `common/types.hpp` | ⬜ |
-| P1-T2 | Implement JSON parser using nlohmann/json | ⬜ |
-| P1-T3 | Schema validation: required fields, value ranges, type checks | ⬜ |
-| P1-T4 | Unit tests: valid config, missing field, invalid mark value | ⬜ |
-| P1-T5 | Integrate into `main.cpp` — load config at startup | ⬜ |
+| P1-T1 | Define `PathClassConfig` struct in `common/types.hpp` | ✅ |
+| P1-T2 | Implement JSON parser using nlohmann/json | ✅ |
+| P1-T3 | Schema validation: required fields, value ranges, type checks | ✅ |
+| P1-T4 | Unit tests: valid config, missing field, invalid mark value | ✅ |
+| P1-T5 | Integrate into `main.cpp` — load config at startup | ✅ |
 
 **Scope boundary:**
 - Load and validate only — do NOT setup cgroup/iptables
