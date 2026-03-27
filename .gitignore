@@ -17,3 +17,6 @@ __pycache__/
 # OS artifacts
 .DS_Store
 .gitnexus
+meta-openembedded
+meta-raspberrypi
+poky

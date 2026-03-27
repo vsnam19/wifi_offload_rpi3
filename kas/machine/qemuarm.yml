@@ -1,0 +1,29 @@
+# QEMU ARM machine overlay — development/CI testing without physical Pi hardware
+#
+# Usage:
+#   Build:  kas build kas/kas.yml:kas/machine/qemuarm.yml
+#   Boot:   kas shell kas/kas.yml:kas/machine/qemuarm.yml -c \
+#             "runqemu qemuarm nographic slirp"
+#
+# Provides the same kernel features as rpi3 (MPTCP, cgroup net_cls, iptables).
+# Use rpi3 overlay for final P0-T10 hardware sign-off.
+
+header:
+  version: 14
+
+machine: qemuarm
+
+local_conf_header:
+  qemuarm-overrides: |
+    # ── cgroup v1 — required for /sys/fs/cgroup/net_cls/ ─────────────
+    # systemd >= 233 defaults to unified cgroup v2 which does not expose
+    # /sys/fs/cgroup/net_cls/.  Our Phase 2 routing uses the net_cls v1
+    # hierarchy.  Force hybrid mode so both v1 net_cls and v2 coexist.
+    # Revisit when Phase 2 finalises the cgroup strategy (ref: OP-1).
+    APPEND:append = " systemd.unified_cgroup_hierarchy=0 cgroup_enable=net_cls,memory"
+
+    # ── QEMU networking ───────────────────────────────────────────────
+    # slirp: user-mode networking — no root/tap required on the host.
+    # The daemon itself only needs the kernel features present; full
+    # WiFi/LTE hardware is not emulated in QEMU.
+    QB_NET = "slirp"

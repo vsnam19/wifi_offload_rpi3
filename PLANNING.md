@@ -8,11 +8,12 @@
 ## ⚡ Active Tasks
 
 **Current phase:** Phase 0 — Yocto Build Validation
-**Current task:** `P0-T10` — Run `kas build`, flash image, verify on Pi 3B+
+**Current task:** `P0-T10` — Flash image to Pi 3B+ and run verification commands
 
-> All source files and Yocto layer files verified/fixed (P0-T1 through P0-T8/T9).
-> P0-T10 requires physical Raspberry Pi 3B+ and kas build execution.
-> Phase 1 (Config Loader) is already complete and will ship in the image.
+> `kas build kas/kas.yml` completed: 5263 tasks, all succeeded.
+> QEMU overlay added: `kas build kas/kas.yml:kas/machine/qemuarm.yml` for CI testing.
+> P0-T10 requires physical Raspberry Pi 3B+ for final hardware sign-off.
+> Phase 1 (Config Loader) is already complete and ships in the image.
 
 **Do this task only. Do not proceed to Phase 2 without human confirmation.**
 
