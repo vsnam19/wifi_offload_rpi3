@@ -2,6 +2,7 @@
 
 #include "common/logger.hpp"
 #include "config/config_loader.hpp"
+#include "routing/routing_policy_manager.hpp"
 
 #include <atomic>
 #include <csignal>
@@ -66,7 +67,18 @@ int main(int argc, char* argv[]) {
     }
     [[maybe_unused]] const auto& pathClasses = configResult.value();
 
-    // TODO Phase 2: pass pathClasses to RoutingPolicyManager
+    // ── Phase 2: setup cgroup net_cls hierarchy ───────────────────
+    netservice::RoutingPolicyManager routingMgr{pathClasses};
+    if (auto result = routingMgr.createCgroupHierarchy(); !result) {
+        logger::error("[MAIN] routing setup failed: {}",
+            netservice::toString(result.error()));
+        logger::close();
+        return EXIT_FAILURE;
+    }
+
+    // TODO Phase 2-T2: addIptablesRules
+    // TODO Phase 2-T3: addIpRules
+    // TODO Phase 2-T4: addDropRules for strict_isolation
     // TODO Phase 3: pass pathClasses to WpaMonitor
     // TODO Phase 4: pass pathClasses to PathStateFsm
     // TODO Phase 5: pass pathClasses to ConsumerApiServer
@@ -80,7 +92,8 @@ int main(int argc, char* argv[]) {
 
     logger::info("[MAIN] SIGTERM received — shutting down");
 
-    // TODO Phase 2: cleanup routing rules and cgroups
+    // Phase 2: remove cgroup dirs
+    routingMgr.cleanup();
 
     logger::info("[MAIN] shutdown complete");
     logger::close();

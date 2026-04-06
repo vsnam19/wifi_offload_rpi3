@@ -19,16 +19,32 @@ RuntimeDirectory=netservice
 RuntimeDirectoryMode=0755
 
 # Hardening
-CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN
-AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN
+# CAP_NET_ADMIN: Netlink socket operations (MPTCP, routing rules)
+# CAP_NET_RAW:   Raw socket / iptables mark operations
+# CAP_SYS_ADMIN: cgroup directory creation (cgroup_mkdir kernel path)
+# CAP_DAC_OVERRIDE: required by cgroupfs mkdir even when running as root;
+#   the kernel's cgroup v1 directory creation uses capable(CAP_DAC_OVERRIDE)
+#   to check write permission on the cgroup parent directory.
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN CAP_DAC_OVERRIDE
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN CAP_DAC_OVERRIDE
 NoNewPrivileges=yes
-ProtectSystem=strict
+# ProtectSystem=full: makes /usr, /boot, /efi, /etc read-only.
+# strict is NOT used because it interferes with cgroupfs bind-mount
+# propagation inside the service namespace — even when ReadWritePaths lists
+# /sys/fs/cgroup/net_cls,net_prio, the kernel refuses mkdir in the namespace.
+# full leaves /sys writable which is needed for cgroup v1 directory creation.
+ProtectSystem=full
 ProtectHome=yes
 PrivateTmp=yes
-ReadWritePaths=/sys/fs/cgroup/net_cls /etc/netservice /run/netservice
+# /sys/fs/cgroup/net_cls is a symlink to net_cls,net_prio on this kernel.
+# ReadWritePaths requires the real mountpoint (symlinks are not followed by
+# systemd's bind-mount logic).  Both paths are listed for portability.
+ReadWritePaths=/sys/fs/cgroup /sys/fs/cgroup/net_cls,net_prio /etc/netservice /run/netservice
 
-StandardOutput=journal
-StandardError=journal
+# journal+console: stderr goes to journald AND to the UART serial console
+# so logs are visible both via 'journalctl' and on a physical serial terminal.
+StandardOutput=journal+console
+StandardError=journal+console
 SyslogIdentifier=wifi-offload-manager
 
 [Install]

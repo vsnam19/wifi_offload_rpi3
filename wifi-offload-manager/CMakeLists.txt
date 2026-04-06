@@ -23,8 +23,8 @@ endif()
 add_executable(wifi-offload-manager
     src/main.cpp
     src/config/config_loader.cpp
-    # Phase 2+:
-    # src/routing/routing_policy_manager.cpp
+    src/routing/routing_policy_manager.cpp  # P2-T1
+    # Phase 3+:
     # src/mptcp/mptcp_manager.cpp
     # src/wpa/wpa_monitor.cpp
     # src/fsm/path_state_fsm.cpp
