@@ -1,4 +1,5 @@
 // routing_policy_manager.cpp — P2-T1/P2-T2/P2-T3: cgroup + iptables MARK + ip rules
+//                               P4-T3/P4-T4: addDefaultRoute / removeDefaultRoute
 
 #include "routing/routing_policy_manager.hpp"
 #include "common/logger.hpp"
@@ -11,8 +12,12 @@
 #include <format>
 #include <fstream>
 #include <memory>
+#include <sstream>
 #include <system_error>
 #include <vector>
+
+// For if_nametoindex
+#include <net/if.h>
 
 // libiptc and kernel netfilter headers for P2-T2
 #include <libiptc/libiptc.h>
@@ -703,6 +708,179 @@ void RoutingPolicyManager::cleanup() noexcept
             }
         }
     }
+}
+
+} // namespace netservice
+
+// ─────────────────────────────────────────────────────────────────────────────
+// P4-T3 / P4-T4 — dynamic default route management
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace netservice {
+
+namespace {
+
+// Send a single RTM_NEWROUTE / RTM_DELROUTE for a default (0.0.0.0/0) route.
+// gwAddr   — gateway in network byte order (0 = omit for RTM_DELROUTE)
+// ifindex  — interface index from if_nametoindex()
+// table    — routing table number
+// msgType  — RTM_NEWROUTE or RTM_DELROUTE
+// extraFlags — NLM_F_CREATE | NLM_F_REPLACE for new route; 0 for delete
+[[nodiscard]] static std::expected<void, RoutingError>
+sendRouteMsg(uint32_t gwAddr, uint32_t ifindex, uint32_t table,
+             uint16_t msgType, int extraFlags) noexcept
+{
+    // MNL_SOCKET_BUFFER_SIZE is not a compile-time constant on all targets;
+    // use the standard mnl recommended size of 8 KiB directly.
+    char buf[8192];
+
+    struct mnl_socket* raw = mnl_socket_open(NETLINK_ROUTE);
+    if (!raw) {
+        logger::error("[ROUTING] mnl_socket_open(route) failed: errno={} ({})",
+                      errno, std::strerror(errno));
+        return std::unexpected(RoutingError::NetlinkError);
+    }
+    auto nl = std::unique_ptr<mnl_socket, decltype(&mnl_socket_close)>{
+        raw, mnl_socket_close};
+
+    if (mnl_socket_bind(nl.get(), 0, MNL_SOCKET_AUTOPID) < 0) {
+        logger::error("[ROUTING] mnl_socket_bind failed: errno={} ({})",
+                      errno, std::strerror(errno));
+        return std::unexpected(RoutingError::NetlinkError);
+    }
+
+    const uint32_t seq    = static_cast<uint32_t>(std::time(nullptr));
+    const uint32_t portid = mnl_socket_get_portid(nl.get());
+
+    struct nlmsghdr* nlh = mnl_nlmsg_put_header(buf);
+    nlh->nlmsg_type  = msgType;
+    nlh->nlmsg_flags = static_cast<uint16_t>(NLM_F_REQUEST | NLM_F_ACK | extraFlags);
+    nlh->nlmsg_seq   = seq;
+
+    auto* rtm = static_cast<struct rtmsg*>(
+        mnl_nlmsg_put_extra_header(nlh, sizeof(struct rtmsg)));
+    rtm->rtm_family   = AF_INET;
+    rtm->rtm_dst_len  = 0;        // 0.0.0.0/0 — default route
+    rtm->rtm_src_len  = 0;
+    rtm->rtm_tos      = 0;
+    rtm->rtm_table    = RT_TABLE_UNSPEC;  // real table via RTA_TABLE
+    rtm->rtm_protocol = RTPROT_STATIC;
+    rtm->rtm_scope    = RT_SCOPE_UNIVERSE;
+    rtm->rtm_type     = RTN_UNICAST;
+    rtm->rtm_flags    = 0;
+
+    if (gwAddr != 0) {
+        mnl_attr_put_u32(nlh, RTA_GATEWAY, gwAddr);
+    }
+    mnl_attr_put_u32(nlh, RTA_OIF,   ifindex);
+    mnl_attr_put_u32(nlh, RTA_TABLE, table);
+
+    if (mnl_socket_sendto(nl.get(), nlh, nlh->nlmsg_len) < 0) {
+        logger::error("[ROUTING] sendto(route) failed: errno={} ({})",
+                      errno, std::strerror(errno));
+        return std::unexpected(RoutingError::NetlinkError);
+    }
+
+    const ssize_t nrecv = mnl_socket_recvfrom(nl.get(), buf, sizeof(buf));
+    if (nrecv < 0) {
+        if ((msgType == RTM_NEWROUTE && errno == EEXIST) ||
+            (msgType == RTM_DELROUTE && errno == ENOENT)) {
+            return {};
+        }
+        logger::error("[ROUTING] recvfrom(route) failed: errno={} ({})",
+                      errno, std::strerror(errno));
+        return std::unexpected(RoutingError::NetlinkError);
+    }
+
+    const int ret = mnl_cb_run(buf, static_cast<size_t>(nrecv),
+                               seq, portid, nullptr, nullptr);
+    if (ret < 0) {
+        if ((msgType == RTM_NEWROUTE && errno == EEXIST) ||
+            (msgType == RTM_DELROUTE && errno == ENOENT)) {
+            return {};
+        }
+        logger::error("[ROUTING] netlink route op=0x{:04x} failed: errno={} ({})",
+                      msgType, errno, std::strerror(errno));
+        return std::unexpected(RoutingError::NetlinkError);
+    }
+    return {};
+}
+
+} // anonymous namespace
+
+// ── P4-T3 ──────────────────────────────────────────────────────────────────
+std::expected<void, RoutingError>
+RoutingPolicyManager::addDefaultRoute(std::string_view iface,
+                                      uint32_t gwAddr,
+                                      uint32_t routingTable) noexcept
+{
+    const unsigned int ifindex = if_nametoindex(std::string{iface}.c_str());
+    if (ifindex == 0) {
+        logger::error("[ROUTING] addDefaultRoute: unknown iface '{}': errno={} ({})",
+                      iface, errno, std::strerror(errno));
+        return std::unexpected(RoutingError::NetlinkError);
+    }
+
+    logger::info("[ROUTING] addDefaultRoute: iface={} gw=0x{:08x} table={}",
+                 iface, gwAddr, routingTable);
+
+    return sendRouteMsg(gwAddr, ifindex, routingTable, RTM_NEWROUTE,
+                        NLM_F_CREATE | NLM_F_REPLACE);
+}
+
+// ── P4-T4 ──────────────────────────────────────────────────────────────────
+std::expected<void, RoutingError>
+RoutingPolicyManager::removeDefaultRoute(std::string_view iface,
+                                         uint32_t routingTable) noexcept
+{
+    const unsigned int ifindex = if_nametoindex(std::string{iface}.c_str());
+    if (ifindex == 0) {
+        // Interface may already be gone; treat as success.
+        logger::warn("[ROUTING] removeDefaultRoute: unknown iface '{}', skipping",
+                     iface);
+        return {};
+    }
+
+    logger::info("[ROUTING] removeDefaultRoute: iface={} table={}", iface, routingTable);
+
+    return sendRouteMsg(0, ifindex, routingTable, RTM_DELROUTE, 0);
+}
+
+// ── Gateway query ──────────────────────────────────────────────────────────
+uint32_t
+RoutingPolicyManager::queryGatewayForIface(std::string_view iface) noexcept
+{
+    // /proc/net/route columns:
+    // Iface  Destination  Gateway  Flags  RefCnt  Use  Metric  Mask  MTU  Window  IRTT
+    // All numeric fields are hex, stored little-endian (host byte order on ARM/x86).
+    // The default route has Destination == "00000000".
+    std::ifstream f{"/proc/net/route"};
+    if (!f.is_open()) {
+        logger::error("[ROUTING] queryGatewayForIface: cannot open /proc/net/route");
+        return 0;
+    }
+
+    std::string line;
+    std::getline(f, line); // skip header
+
+    while (std::getline(f, line)) {
+        std::istringstream ss{line};
+        std::string dev, dst, gw;
+        if (!(ss >> dev >> dst >> gw)) continue;
+        if (dev != iface) continue;
+        if (dst != "00000000") continue;  // not the default route
+
+        // gw is in hex, host byte order (LE on ARM/x86)
+        // htonl() converts to network byte order for Netlink RTA_GATEWAY.
+        unsigned long gwHex{};
+        try { gwHex = std::stoul(gw, nullptr, 16); }
+        catch (...) { continue; }
+
+        return htonl(static_cast<uint32_t>(gwHex));
+    }
+
+    logger::warn("[ROUTING] queryGatewayForIface: no default route for iface={}", iface);
+    return 0;
 }
 
 } // namespace netservice

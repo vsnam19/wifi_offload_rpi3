@@ -68,6 +68,24 @@ public:
     // Called on clean daemon shutdown.
     void cleanup() noexcept;
 
+    // ── P4-T3 / P4-T4 — dynamic route management ─────────────────
+    // Add a default (0.0.0.0/0) route to `routingTable` via `gwAddr`
+    // on interface `iface`.  gwAddr must be in network byte order.
+    // Idempotent (EEXIST treated as success).
+    [[nodiscard]] std::expected<void, RoutingError>
+    addDefaultRoute(std::string_view iface, uint32_t gwAddr,
+                    uint32_t routingTable) noexcept;
+
+    // Remove the default route from `routingTable` via `iface`.
+    // Idempotent (ENOENT treated as success).
+    [[nodiscard]] std::expected<void, RoutingError>
+    removeDefaultRoute(std::string_view iface, uint32_t routingTable) noexcept;
+
+    // Query the current default gateway for `iface` from /proc/net/route.
+    // Returns the gateway in network byte order, or 0 if not found.
+    [[nodiscard]] static uint32_t
+    queryGatewayForIface(std::string_view iface) noexcept;
+
 private:
     std::span<const PathClassConfig> classes_; // non-owning view into config
 

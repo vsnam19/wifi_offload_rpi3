@@ -50,34 +50,37 @@ if [[ "${BUILD_ONLY}" -eq 1 ]]; then
     exit 0
 fi
 
-# ── Step 2: Copy IPK to target ────────────────────────────────────
-echo "==> Copying to ${TARGET}:/tmp/..."
-scp -q "${IPK_FILE}" "${TARGET}:/tmp/"
-
-REMOTE_IPK="/tmp/$(basename "${IPK_FILE}")"
-
 # ── Step 3: Install and restart ───────────────────────────────────
 echo "==> Installing on target..."
-ssh "${TARGET}" sh << EOF
-set -e
-cp ${REMOTE_IPK} /tmp/wom_new
-if command -v opkg > /dev/null 2>&1; then
-    opkg install --force-reinstall ${REMOTE_IPK}
-    rm -f ${REMOTE_IPK}
-else
-    # No opkg — extract binary from IPK directly
-    # IPK is an ar archive; data.tar.* contains the files
-    cd /tmp && mkdir -p wom_ipk_extract && cd wom_ipk_extract
-    ar x ${REMOTE_IPK}
-    tar -xf data.tar.* 2>/dev/null || tar -xzf data.tar.gz 2>/dev/null || true
-    if [ -f usr/sbin/wifi-offload-manager ]; then
-        systemctl stop wifi-offload-manager 2>/dev/null || true
-        mv usr/sbin/wifi-offload-manager /usr/sbin/wifi-offload-manager
-        chmod 755 /usr/sbin/wifi-offload-manager
-    fi
-    cd /tmp && rm -rf wom_ipk_extract
-    rm -f ${REMOTE_IPK}
+
+# Extract the binary from the IPK on the HOST (ar is not available on all targets)
+EXTRACT_DIR="$(mktemp -d)"
+trap "rm -rf ${EXTRACT_DIR}" EXIT
+
+# IPK = ar archive containing data.tar.{gz,xz,zst,...}
+cd "${EXTRACT_DIR}"
+ar x "${IPK_FILE}"
+# data.tar.* may be .gz, .xz or .zst depending on Yocto config
+DATA_TAR=$(ls data.tar.* 2>/dev/null | head -1)
+if [[ -z "${DATA_TAR}" ]]; then
+    echo "ERROR: no data.tar.* found inside IPK" >&2
+    exit 1
 fi
+tar -xf "${DATA_TAR}"
+BINARY="${EXTRACT_DIR}/usr/sbin/wifi-offload-manager"
+if [[ ! -f "${BINARY}" ]]; then
+    echo "ERROR: binary not found after IPK extraction" >&2
+    exit 1
+fi
+
+echo "==> Copying binary to ${TARGET}:/tmp/wom_new..."
+scp -q "${BINARY}" "${TARGET}:/tmp/wom_new"
+
+ssh "${TARGET}" sh << 'EOF'
+set -e
+systemctl stop wifi-offload-manager 2>/dev/null || true
+mv /tmp/wom_new /usr/sbin/wifi-offload-manager
+chmod 755 /usr/sbin/wifi-offload-manager
 systemctl daemon-reload
 systemctl restart wifi-offload-manager
 sleep 1
