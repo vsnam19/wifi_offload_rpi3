@@ -8,16 +8,16 @@
 ## ⚡ Active Tasks
 
 **Current phase:** Phase 2 — Routing Policy Manager
-**Current task:** `P2-T2` — Add iptables mangle rules: classid → fwmark
+**Current task:** `P2-T3` — Add ip rules: fwmark → routing table (via Netlink/libmnl)
 
-> Phase 0 ✅ complete (2026-04-06). Phase 1 ✅ complete. P2-T1 ✅ complete (2026-04-06).
+> Phase 0 ✅ complete (2026-04-06). Phase 1 ✅ complete. P2-T1 ✅ complete (2026-04-06). P2-T2 ✅ complete (2026-04-06).
 >
 > **IPK deploy workflow** (no reflash needed for daemon changes):
 > ```bash
 > ./scripts/deploy.sh root@172.16.45.2
 > ```
 
-**Do this task only. Do not proceed to P2-T3 without completing P2-T2.**
+**Do this task only. Do not proceed to P2-T4 without completing P2-T3.**
 
 ---
 
@@ -213,7 +213,7 @@ journalctl -u wifi-offload-manager | grep "\[CONFIG\]"
 | Task | Description | Status |
 |---|---|---|
 | P2-T1 | Create cgroup directories + write classid | ✅ |
-| P2-T2 | Add iptables mangle rules: classid → fwmark | ⬜ |
+| P2-T2 | Add iptables mangle rules: classid → fwmark | ✅ |
 | P2-T3 | Add ip rules: fwmark → routing table (via Netlink/libmnl) | ⬜ |
 | P2-T4 | Add safety net DROP rules for `strict_isolation` classes | ⬜ |
 | P2-T5 | Cleanup on daemon exit (remove rules, delete cgroups) | ⬜ |
