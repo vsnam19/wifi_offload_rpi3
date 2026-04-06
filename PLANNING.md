@@ -7,17 +7,17 @@
 
 ## ⚡ Active Tasks
 
-**Current phase:** Phase 2 — Routing Policy Manager ✅ + MptcpManager (Phase 4 early)
-**Current task:** `P3-T1` — wpa_supplicant Monitor: copy wpa_ctrl.h/.c
+**Current phase:** Phase 3 — wpa_supplicant Monitor ✅
+**Current task:** `P4-T1` — Path State FSM: implement states and transitions
 
-> Phase 0 ✅ complete (2026-04-06). Phase 1 ✅ complete. P2-T1 ✅. P2-T2 ✅. P2-T3 ✅. P2-T4 ✅. P2-T5 ✅. P2-T6 ✅ (2026-04-07 — verified: mark 0x10 → table 100 → eth0.100). MptcpManager ✅ (2026-04-07 — MPTCP PM endpoints registered/flushed via Generic Netlink).
+> Phase 0 ✅ complete (2026-04-06). Phase 1 ✅ complete. P2-T1 ✅. P2-T2 ✅. P2-T3 ✅. P2-T4 ✅. P2-T5 ✅. P2-T6 ✅ (2026-04-07 — verified: mark 0x10 → table 100 → eth0.100). MptcpManager ✅ (2026-04-07 — MPTCP PM endpoints registered/flushed via Generic Netlink). P3-T1..T5 ✅ (2026-04-07 — WpaMonitor: connect/attach/event-loop, event parsing, RSSI extraction, callback interface).
 >
 > **IPK deploy workflow** (no reflash needed for daemon changes):
 > ```bash
 > ./scripts/deploy.sh root@172.16.45.2
 > ```
 
-**Do this task only. Do not proceed to Phase 3 without completing P2-T6.**
+**Do this task only. Do not proceed to Phase 4 without completing P3-T5.**
 
 ---
 
@@ -234,16 +234,16 @@ ls /sys/fs/cgroup/net_cls/                   # multipath/ lte_b2c/ lte_b2b/
 
 ### Phase 3 — wpa_supplicant Monitor
 **Goal:** Receive and parse WiFi events from wpa_supplicant  
-**Status:** ⏸ Blocked on Phase 0  
+**Status:** ✅ Complete (2026-04-07)
 **Dependency:** Phase 0 complete (independent of Phase 1, 2)
 
 | Task | Description | Status |
 |---|---|---|
-| P3-T1 | Copy `wpa_ctrl.h/.c` from wpa_supplicant upstream into `src/wpa/` | ⬜ |
-| P3-T2 | Implement wpa_ctrl connect / attach / event loop | ⬜ |
-| P3-T3 | Parse events: CONNECTED, DISCONNECTED, SIGNAL-CHANGE | ⬜ |
-| P3-T4 | Extract RSSI integer from `CTRL-EVENT-SIGNAL-CHANGE rssi=X avg_rssi=Y` | ⬜ |
-| P3-T5 | Define callback interface → feeds events into FSM (Phase 4) | ⬜ |
+| P3-T1 | Copy `wpa_ctrl.h/.c` from wpa_supplicant upstream into `src/wpa/` | ✅ |
+| P3-T2 | Implement wpa_ctrl connect / attach / event loop | ✅ |
+| P3-T3 | Parse events: CONNECTED, DISCONNECTED, SIGNAL-CHANGE | ✅ |
+| P3-T4 | Extract RSSI integer from `CTRL-EVENT-SIGNAL-CHANGE rssi=X avg_rssi=Y` | ✅ |
+| P3-T5 | Define callback interface → feeds events into FSM (Phase 4) | ✅ |
 
 **Scope boundary:**
 - Monitor events only — do NOT manage wpa_supplicant lifecycle
