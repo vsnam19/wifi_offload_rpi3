@@ -91,7 +91,7 @@ PathState PathStateFsm::nextState(PathState current,
 }
 
 // ── transition ────────────────────────────────────────────────────────────────
-void PathStateFsm::transition(PathState newState, std::string_view iface) {
+void PathStateFsm::transition(PathState newState, std::string_view iface, int rssi) {
     if (newState == state_) return;
 
     const PathState prev = state_;
@@ -120,14 +120,14 @@ void PathStateFsm::transition(PathState newState, std::string_view iface) {
     // PathDegraded → PathDown: covered by the PathDown branch above.
 
     if (callbacks_.onStateChanged) {
-        callbacks_.onStateChanged(prev, newState);
+        callbacks_.onStateChanged(prev, newState, iface, rssi);
     }
 }
 
 // ── onWpaEvent ────────────────────────────────────────────────────────────────
 void PathStateFsm::onWpaEvent(const WpaEvent& ev) {
     const PathState next = nextState(state_, ev, config_.rssi);
-    transition(next, ev.iface);
+    transition(next, ev.iface, ev.rssi);
 }
 
 } // namespace netservice

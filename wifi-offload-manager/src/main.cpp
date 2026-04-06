@@ -6,6 +6,7 @@
 #include "mptcp/mptcp_manager.hpp"
 #include "fsm/path_state_fsm.hpp"
 #include "wpa/wpa_monitor.hpp"
+#include "api/consumer_api_server.hpp"
 
 #include <atomic>
 #include <csignal>
@@ -119,6 +120,9 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
+    // ── Phase 5: Consumer API Server (construct early so FSM callbacks can capture it) ──
+    auto apiServerPtr = std::make_unique<netservice::ConsumerApiServer>(pathClasses);
+
     // ── Phase 4: Path State FSM + WpaMonitor ─────────────────────
     // Create one FSM per path class that has a WiFi interface.
     // For now we only monitor the "multipath" class (index 0, interface[0]).
@@ -166,11 +170,13 @@ int main(int argc, char* argv[]) {
             }
         };
 
-        cbs.onStateChanged = [id = cls.id](
-                                  netservice::PathState from,
-                                  netservice::PathState to) {
-            (void)from; (void)to; (void)id;
-            // TODO Phase 5: notify ConsumerApiServer of state change
+        cbs.onStateChanged = [&apiServer = *apiServerPtr, id = cls.id](
+                                  netservice::PathState /*from*/,
+                                  netservice::PathState to,
+                                  std::string_view iface,
+                                  int rssi) {
+            apiServer.broadcastPathEvent(id, to, iface, rssi);
+            apiServer.updateCurrentState(id, to);
         };
 
         auto fsm = std::make_unique<netservice::PathStateFsm>(cls, std::move(cbs));
@@ -192,7 +198,14 @@ int main(int argc, char* argv[]) {
         monitors.push_back(std::move(monitor));
     }
 
-    // TODO Phase 5: start ConsumerApiServer
+    // ── Phase 5: start Consumer API Server ─────────────────────
+    if (auto r = apiServerPtr->start(); !r) {
+        logger::error("[MAIN] ConsumerApiServer start failed: {}",
+            netservice::toString(r.error()));
+        routingMgr.cleanup();
+        logger::close();
+        return EXIT_FAILURE;
+    }
 
     logger::info("[MAIN] startup complete — entering event loop");
 
@@ -210,6 +223,9 @@ int main(int argc, char* argv[]) {
     for (auto& t : monitorThreads) {
         if (t.joinable()) t.join();
     }
+
+    // Phase 5: stop Consumer API server
+    apiServerPtr->stop();
 
     // Phase 4: flush MPTCP endpoints
     mptcpMgr.removeEndpoints();

@@ -34,7 +34,10 @@ public:
         std::function<void(std::string_view iface, uint32_t table)> onPathDown;
 
         // Optional: observability hook — called after every state transition.
-        std::function<void(PathState from, PathState to)> onStateChanged;
+        // `iface` is the interface that drove the transition (may be empty for Terminating).
+        // `rssi` is the RSSI from the triggering event (0 if not applicable).
+        std::function<void(PathState from, PathState to,
+                           std::string_view iface, int rssi)> onStateChanged;
     };
 
     // ── Construction ────────────────────────────────────────────────────────
@@ -76,7 +79,7 @@ private:
 
     // Apply `newState`.  If it differs from `state_`, fires callbacks and
     // records the iface that was active at transition time.
-    void transition(PathState newState, std::string_view iface);
+    void transition(PathState newState, std::string_view iface, int rssi = 0);
 };
 
 } // namespace netservice

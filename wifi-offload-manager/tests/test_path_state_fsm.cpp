@@ -230,7 +230,7 @@ TEST(PathStateFsmCallbacks, TerminatingFromPathUp_FiresOnPathDown_ThenIdle) {
     PathStateFsm::Callbacks cbs;
     cbs.onPathUp   = [](std::string_view, uint32_t) {};
     cbs.onPathDown = [&](std::string_view, uint32_t) { pathDownCalled = true; };
-    cbs.onStateChanged = [&](PathState, PathState to) { finalState = to; };
+    cbs.onStateChanged = [&](PathState, PathState to, std::string_view, int) { finalState = to; };
 
     PathStateFsm fsm{makeConfig(), std::move(cbs)};
     fsm.onWpaEvent(makeEvent(WpaEventType::Connected,   "eth0.100", -65));
@@ -248,7 +248,7 @@ TEST(PathStateFsmCallbacks, onStateChangedFiredForEveryTransition) {
     PathStateFsm::Callbacks cbs;
     cbs.onPathUp       = [](std::string_view, uint32_t) {};
     cbs.onPathDown     = [](std::string_view, uint32_t) {};
-    cbs.onStateChanged = [&](PathState from, PathState to) {
+    cbs.onStateChanged = [&](PathState from, PathState to, std::string_view, int) {
         changes.emplace_back(from, to);
     };
 
