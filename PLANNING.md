@@ -7,19 +7,21 @@
 
 ## ⚡ Active Tasks
 
-**Current phase:** Phase 4 — Path State FSM ✅
-**Current task:** `P5-T1` — Consumer API Server: Unix domain socket IPC
+**Current phase:** Phase 5 — Consumer Registration API ✅
+**Current task:** `P6-T1` — Integration & Hardening: end-to-end test on RPi
 
-> Phase 0 ✅. Phase 1 ✅. P2-T1..T6 ✅. MptcpManager ✅. P3-T1..T5 ✅ (WpaMonitor).
-> P4-T1..T5 ✅ (2026-04-07 — PathStateFsm: states/transitions, RSSI thresholds,
-> addDefaultRoute/removeDefaultRoute, 17 unit tests all pass, deployed to RPi).
+> Phase 0 ✅. Phase 1 ✅. P2-T1..T6 ✅. MptcpManager ✅. P3-T1..T5 ✅.
+> P4-T1..T5 ✅ (PathStateFsm, 17 unit tests, deployed to RPi).
+> P5-T1..T7 ✅ (2026-04-07 — ConsumerApiServer: Unix socket server, epoll loop,
+> Register/Unregister/QueryCurrent/PathEvent, cgroup PID assignment,
+> 8 unit tests + mock_consumer, deployed — [API] server started confirmed).
 >
 > **IPK deploy workflow** (no reflash needed for daemon changes):
 > ```bash
 > ./scripts/deploy.sh root@172.16.45.2
 > ```
 
-**Do this task only. Do not proceed to Phase 6 without completing P5-T1.**
+**Do this task only. Phase 6 tasks must be completed one at a time.**
 
 ---
 
