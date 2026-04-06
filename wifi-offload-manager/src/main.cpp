@@ -3,6 +3,7 @@
 #include "common/logger.hpp"
 #include "config/config_loader.hpp"
 #include "routing/routing_policy_manager.hpp"
+#include "mptcp/mptcp_manager.hpp"
 
 #include <atomic>
 #include <csignal>
@@ -103,6 +104,16 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
+    // ── Phase 4 (early): MPTCP endpoint registration ─────────────
+    netservice::MptcpManager mptcpMgr{pathClasses};
+    if (auto result = mptcpMgr.addEndpoints(); !result) {
+        logger::error("[MAIN] MPTCP endpoint setup failed: {}",
+            netservice::toString(result.error()));
+        routingMgr.cleanup();
+        logger::close();
+        return EXIT_FAILURE;
+    }
+
     // TODO Phase 3: pass pathClasses to WpaMonitor
     // TODO Phase 4: pass pathClasses to PathStateFsm
     // TODO Phase 5: pass pathClasses to ConsumerApiServer
@@ -115,6 +126,9 @@ int main(int argc, char* argv[]) {
     }
 
     logger::info("[MAIN] SIGTERM received — shutting down");
+
+    // Phase 4: flush MPTCP endpoints
+    mptcpMgr.removeEndpoints();
 
     // Phase 2: remove cgroup dirs
     routingMgr.cleanup();

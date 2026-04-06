@@ -29,8 +29,8 @@ add_executable(wifi-offload-manager
     src/main.cpp
     src/config/config_loader.cpp
     src/routing/routing_policy_manager.cpp  # P2-T1
+    src/mptcp/mptcp_manager.cpp              # Phase 4 (brought forward)
     # Phase 3+:
-    # src/mptcp/mptcp_manager.cpp
     # src/wpa/wpa_monitor.cpp
     # src/fsm/path_state_fsm.cpp
     # src/api/consumer_api_server.cpp
