@@ -1,3 +1,19 @@
+# ── Mock consumer (standalone integration helper / P6-T1 E2E) ────
+add_executable(mock_consumer
+    mock_consumer.cpp
+)
+target_include_directories(mock_consumer PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_compile_options(mock_consumer PRIVATE
+    -Wall -Wextra -Wpedantic -Wno-unused-parameter
+)
+install(TARGETS mock_consumer RUNTIME DESTINATION ${CMAKE_INSTALL_SBINDIR})
+
+if(NOT BUILD_TESTS)
+    return()
+endif()
+
 find_package(GTest REQUIRED)
 
 # ── Config Loader tests ───────────────────────────────────────────
@@ -48,17 +64,6 @@ target_compile_options(test_consumer_api PRIVATE
     -Wall -Wextra -Wpedantic -Wno-unused-parameter
 )
 add_test(NAME test_consumer_api COMMAND test_consumer_api)
-
-# ── Mock consumer (standalone integration helper) ─────────────────
-add_executable(mock_consumer
-    mock_consumer.cpp
-)
-target_include_directories(mock_consumer PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
-)
-target_compile_options(mock_consumer PRIVATE
-    -Wall -Wextra -Wpedantic -Wno-unused-parameter
-)
 
 # ── Routing Policy tests (Phase 2) ───────────────────────────────
 # add_executable(test_routing_policy

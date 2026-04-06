@@ -17,6 +17,16 @@ find_path(LIBMNL_INCLUDE_DIR NAMES libmnl/libmnl.h REQUIRED)
 find_library(LIBIP4TC_LIBRARY NAMES ip4tc REQUIRED)
 find_path(LIBIP4TC_INCLUDE_DIR NAMES libiptc/libiptc.h REQUIRED)
 
+# libsystemd — optional; enables sd_notify(READY=1) and watchdog (P6-T3).
+# Present in Yocto sysroot; may be absent on dev machines without libsystemd-dev.
+find_library(LIBSYSTEMD_LIBRARY NAMES systemd)
+find_path(LIBSYSTEMD_INCLUDE_DIR NAMES systemd/sd-daemon.h)
+if(LIBSYSTEMD_LIBRARY AND LIBSYSTEMD_INCLUDE_DIR)
+    message(STATUS "libsystemd: found — watchdog ENABLED")
+else()
+    message(STATUS "libsystemd: NOT found — watchdog DISABLED (install libsystemd-dev to enable)")
+endif()
+
 # nlohmann/json — header-only; CMake config package (preferred in Yocto sysroot)
 find_package(nlohmann_json QUIET)
 if(NOT nlohmann_json_FOUND)
@@ -52,6 +62,13 @@ if(nlohmann_json_FOUND)
     target_link_libraries(wifi-offload-manager PRIVATE nlohmann_json::nlohmann_json)
 else()
     target_include_directories(wifi-offload-manager PRIVATE ${NLOHMANN_JSON_INCLUDE_DIR})
+endif()
+
+# libsystemd watchdog — conditioned on header + library presence
+if(LIBSYSTEMD_LIBRARY AND LIBSYSTEMD_INCLUDE_DIR)
+    target_compile_definitions(wifi-offload-manager PRIVATE HAVE_LIBSYSTEMD=1)
+    target_link_libraries(wifi-offload-manager       PRIVATE ${LIBSYSTEMD_LIBRARY})
+    target_include_directories(wifi-offload-manager  PRIVATE ${LIBSYSTEMD_INCLUDE_DIR})
 endif()
 
 # ── Compiler flags ────────────────────────────────────────────────

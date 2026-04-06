@@ -23,8 +23,12 @@ extern "C" {
 #include "wpa/wpa_ctrl.h"
 }
 
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <expected>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <string_view>
 
@@ -79,13 +83,16 @@ public:
     // Must be called before start().
     void setEventCallback(WpaEventCallback cb);
 
-    // Connect, attach, and run the event loop.
-    // Blocks the calling thread until stop() is called or wpa_supplicant
-    // terminates (CTRL-EVENT-TERMINATING received).
-    // Returns WpaError::ConnectFailed / AttachFailed on setup failure.
+    // Connect, attach, and run the event loop with automatic reconnect.
+    // Blocks the calling thread until stop() is called from another thread.
+    // Internally retries with exponential backoff (1s..30s) when wpa_supplicant
+    // is unavailable or terminates. Never returns an error: the only way to
+    // exit is an explicit stop() call.
+    // P6-T2: reconnect loop with exponential backoff
     [[nodiscard]] std::expected<void, WpaError> start();
 
-    // Signal the event loop to exit. Thread-safe.
+    // Signal the reconnect loop to exit. Thread-safe; interrupts any backoff
+    // sleep immediately.
     void stop() noexcept;
 
     // Parse a raw wpa_supplicant event string → WpaEvent
@@ -97,13 +104,24 @@ private:
     std::string       iface_;
     WpaEventCallback  callback_;
     struct wpa_ctrl*  ctrl_{nullptr};
-    volatile bool     stopRequested_{false};
+    std::atomic<bool> stopRequested_{false};
+
+    // Used by stop() to interrupt the backoff sleep in the reconnect loop.
+    std::mutex              cvMutex_;
+    std::condition_variable cv_;
 
     static constexpr std::size_t kRecvBufSize{4096};
     static constexpr int         kPollTimeoutMs{500};
+    static constexpr auto        kInitialBackoff{std::chrono::seconds{1}};
+    static constexpr auto        kMaxBackoff{std::chrono::seconds{30}};
 
+    // Runs the poll/recv loop for the current connection.
+    // Returns when the connection is lost or stop() is called.
     void runEventLoop();
-    void handleEvent(std::string_view raw);
+
+    // Dispatch a raw wpa_supplicant event line.
+    // Returns true when the event loop should exit (connection lost / Terminating).
+    [[nodiscard]] bool handleEvent(std::string_view raw);
 };
 
 } // namespace netservice

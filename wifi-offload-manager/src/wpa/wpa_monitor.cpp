@@ -31,6 +31,8 @@ WpaMonitor::WpaMonitor(std::string ctrlPath, std::string iface)
 
 WpaMonitor::~WpaMonitor() {
     stop();
+    // ctrl_ is always cleaned up inside start()'s reconnect loop.
+    // This guard handles the edge case where stop() is called before start().
     if (ctrl_) {
         wpa_ctrl_detach(ctrl_);
         wpa_ctrl_close(ctrl_);
@@ -45,29 +47,53 @@ void WpaMonitor::setEventCallback(WpaEventCallback cb) {
 }
 
 std::expected<void, WpaError> WpaMonitor::start() {
-    ctrl_ = wpa_ctrl_open(ctrlPath_.c_str());
-    if (!ctrl_) {
-        logger::error("[WPA] failed to open ctrl socket: path={} errno={} ({})",
-                      ctrlPath_, errno, strerror(errno));
-        return std::unexpected(WpaError::ConnectFailed);
+    stopRequested_.store(false, std::memory_order_release);
+    auto backoff = kInitialBackoff;
+
+    // P6-T2: reconnect loop — retries indefinitely until stop() is called.
+    while (!stopRequested_.load(std::memory_order_acquire)) {
+        ctrl_ = wpa_ctrl_open(ctrlPath_.c_str());
+        if (!ctrl_) {
+            logger::warn("[WPA] ctrl_open failed: iface={} path={} — retry in {}s",
+                         iface_, ctrlPath_, backoff.count());
+        } else if (wpa_ctrl_attach(ctrl_) != 0) {
+            logger::warn("[WPA] attach failed: iface={} — retry in {}s",
+                         iface_, backoff.count());
+            wpa_ctrl_close(ctrl_);
+            ctrl_ = nullptr;
+        } else {
+            logger::info("[WPA] attached: iface={} path={}", iface_, ctrlPath_);
+            backoff = kInitialBackoff;  // reset on successful connection
+
+            runEventLoop();
+
+            wpa_ctrl_detach(ctrl_);
+            wpa_ctrl_close(ctrl_);
+            ctrl_ = nullptr;
+
+            if (stopRequested_.load(std::memory_order_acquire)) break;
+            logger::warn("[WPA] connection lost: iface={} — retry in {}s",
+                         iface_, backoff.count());
+        }
+
+        if (stopRequested_.load(std::memory_order_acquire)) break;
+
+        // Interruptible backoff sleep: stop() calls cv_.notify_all()
+        {
+            std::unique_lock lock{cvMutex_};
+            cv_.wait_for(lock, backoff,
+                         [this]{ return stopRequested_.load(std::memory_order_acquire); });
+        }
+        backoff = std::min(backoff * 2, kMaxBackoff);
     }
 
-    if (wpa_ctrl_attach(ctrl_) != 0) {
-        logger::error("[WPA] wpa_ctrl_attach failed: iface={}", iface_);
-        wpa_ctrl_close(ctrl_);
-        ctrl_ = nullptr;
-        return std::unexpected(WpaError::AttachFailed);
-    }
-
-    logger::info("[WPA] attached to wpa_supplicant: iface={} path={}", iface_, ctrlPath_);
-
-    stopRequested_ = false;
-    runEventLoop();
+    logger::info("[WPA] stopped: iface={}", iface_);
     return {};
 }
 
 void WpaMonitor::stop() noexcept {
-    stopRequested_ = true;
+    stopRequested_.store(true, std::memory_order_release);
+    cv_.notify_all();  // interrupt any backoff sleep immediately
 }
 
 // ── Event parsing (static — unit-testable) ────────────────────────
@@ -143,7 +169,7 @@ void WpaMonitor::runEventLoop() {
 
     char buf[kRecvBufSize];
 
-    while (!stopRequested_) {
+    while (!stopRequested_.load(std::memory_order_acquire)) {
         const int ret = poll(&pfd, 1, kPollTimeoutMs);
 
         if (ret < 0) {
@@ -160,7 +186,8 @@ void WpaMonitor::runEventLoop() {
         size_t len = sizeof(buf) - 1;
         if (wpa_ctrl_recv(ctrl_, buf, &len) == 0) {
             buf[len] = '\0';
-            handleEvent(std::string_view{buf, len});
+            const bool done = handleEvent(std::string_view{buf, len});
+            if (done) break;  // Terminating or unrecoverable event
         } else {
             logger::error("[WPA] wpa_ctrl_recv error: iface={}", iface_);
             break;
@@ -170,8 +197,9 @@ void WpaMonitor::runEventLoop() {
     logger::info("[WPA] event loop exited: iface={}", iface_);
 }
 
-void WpaMonitor::handleEvent(std::string_view raw) {
+bool WpaMonitor::handleEvent(std::string_view raw) {
     const WpaEvent ev = parseEvent(raw, iface_);
+    bool exitLoop = false;
 
     switch (ev.type) {
         case WpaEventType::Connected:
@@ -186,7 +214,7 @@ void WpaMonitor::handleEvent(std::string_view raw) {
             break;
         case WpaEventType::Terminating:
             logger::warn("[WPA] TERMINATING: wpa_supplicant exiting on iface={}", iface_);
-            stopRequested_ = true;
+            exitLoop = true;  // exit runEventLoop; reconnect loop will retry
             break;
         case WpaEventType::Other:
             // Intentionally not logged at info level — too noisy
@@ -197,6 +225,7 @@ void WpaMonitor::handleEvent(std::string_view raw) {
     if (callback_) {
         callback_(ev);
     }
+    return exitLoop;
 }
 
 } // namespace netservice

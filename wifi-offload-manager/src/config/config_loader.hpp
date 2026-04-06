@@ -5,6 +5,17 @@
 //   auto result = ConfigLoader::loadFromFile("/etc/netservice/path-policies.json");
 //   if (!result) { /* handle ConfigError */ }
 //   for (const auto& cls : result.value()) { ... }
+//
+// OPEN POINT OP-2: B2B in FOTA chain: should B2B be a last-resort fallback or
+//   an explicitly selected profile?  The config currently treats all classes
+//   equally.  Do NOT add FOTA-specific selection logic here until OP-2 is
+//   resolved by the system integrator.
+//
+// OPEN POINT OP-4: JSON config signature verification.  The config file is
+//   currently loaded and parsed without any integrity check.  Until OP-4 is
+//   resolved (scheme to be decided: e.g. detached Ed25519 signature, HMAC),
+//   do NOT add signature verification here.  Mark any future implementation
+//   with a reference to OP-4.
 
 #include "common/error.hpp"
 #include "common/types.hpp"

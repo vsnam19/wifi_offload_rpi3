@@ -8,6 +8,13 @@
 #include "wpa/wpa_monitor.hpp"
 #include "api/consumer_api_server.hpp"
 
+#ifdef HAVE_LIBSYSTEMD
+#  include <systemd/sd-daemon.h>
+#  define SD_NOTIFY(s) sd_notify(0, (s))
+#else
+#  define SD_NOTIFY(s) ((void)0)  // watchdog disabled — no libsystemd
+#endif
+
 #include <atomic>
 #include <csignal>
 #include <cstdlib>
@@ -25,9 +32,16 @@ static constexpr std::string_view kDefaultConfigPath =
 // ── Shutdown flag set by signal handler ──────────────────────────
 static std::atomic<bool> gShutdown{false};
 
+// ── Config reload flag set by SIGHUP handler ─────────────────────
+// P6-T4: SIGHUP causes a graceful config file reload in the main loop.
+static std::atomic<bool> gReloadConfig{false};
+
 static void handleSignal(int sig) noexcept {
-    gShutdown.store(true, std::memory_order_relaxed);
-    (void)sig;
+    if (sig == SIGHUP) {
+        gReloadConfig.store(true, std::memory_order_relaxed);
+    } else {
+        gShutdown.store(true, std::memory_order_relaxed);
+    }
 }
 
 // ── Argument parsing ─────────────────────────────────────────────
@@ -62,6 +76,14 @@ int main(int argc, char* argv[]) {
     sa.sa_flags = SA_RESTART;
     sigaction(SIGTERM, &sa, nullptr);
     sigaction(SIGINT,  &sa, nullptr);
+
+    // P6-T4: SIGHUP for config reload; do NOT use SA_RESTART so pause() is
+    // interrupted immediately when SIGHUP is delivered.
+    struct sigaction saSighup{};
+    saSighup.sa_handler = handleSignal;
+    sigemptyset(&saSighup.sa_mask);
+    saSighup.sa_flags = 0;  // no SA_RESTART
+    sigaction(SIGHUP, &saSighup, nullptr);
 
     // ── Phase 1: load config ──────────────────────────────────────
     auto configResult = netservice::ConfigLoader::loadFromFile(
@@ -209,12 +231,54 @@ int main(int argc, char* argv[]) {
 
     logger::info("[MAIN] startup complete — entering event loop");
 
-    // ── Main event loop ───────────────────────────────────────────
+    // P6-T3: notify systemd that the daemon is ready (Type=notify in .service).
+    // Also start a watchdog ping thread that resets the watchdog every 10s
+    // (WatchdogSec=30s in the service file — two missed pings trigger restart).
+    SD_NOTIFY("READY=1");
+
+    std::thread wdThread{[]() {
+        // Ping every 10 s; WatchdogSec=30s means 3 missed pings before restart.
+        while (!gShutdown.load(std::memory_order_relaxed)) {
+            SD_NOTIFY("WATCHDOG=1");
+            // Sleep in 100 ms slices so shutdown is responsive.
+            for (int i = 0; i < 100 && !gShutdown.load(std::memory_order_relaxed); ++i) {
+                std::this_thread::sleep_for(std::chrono::milliseconds{100});
+            }
+        }
+    }};
+
+    // ── Main event loop ──────────────────────────────────────────
+    // pause() blocks until any signal is delivered.  SIGTERM/SIGINT/SIGHUP all
+    // interrupt it.  The SA_RESTART flag is NOT set for SIGHUP so it reliably
+    // interrupts pause() even on Linux.
     while (!gShutdown.load(std::memory_order_relaxed)) {
         pause();
+
+        // P6-T4: SIGHUP — reload config from disk, log any changes.
+        // Routing/iptables/MPTCP infra is NOT re-applied (requires daemon restart).
+        // OPEN POINT OP-1: fallback chain trigger is unresolved — do not re-apply routing on reload.
+        if (gReloadConfig.exchange(false, std::memory_order_relaxed)) {
+            logger::info("[MAIN] SIGHUP received — reloading config: {}", args.configPath);
+            auto newCfg = netservice::ConfigLoader::loadFromFile(
+                std::filesystem::path{args.configPath});
+            if (newCfg) {
+                const auto& newClasses = newCfg.value();
+                logger::info("[MAIN] config reloaded: {} path classes", newClasses.size());
+                if (newClasses.size() != pathClasses.size()) {
+                    logger::warn("[MAIN] class count changed ({} -> {}) — restart daemon to apply",
+                                 pathClasses.size(), newClasses.size());
+                }
+            } else {
+                logger::error("[MAIN] SIGHUP: config reload failed: {}",
+                    netservice::toString(newCfg.error()));
+            }
+        }
     }
 
     logger::info("[MAIN] SIGTERM received — shutting down");
+
+    // Stop watchdog thread (P6-T3)
+    if (wdThread.joinable()) wdThread.join();
 
     // Stop all WpaMonitor threads
     for (auto& mon : monitors) {

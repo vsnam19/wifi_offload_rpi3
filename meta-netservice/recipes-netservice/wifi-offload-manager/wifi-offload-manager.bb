@@ -22,6 +22,7 @@ DEPENDS = " \
     libmnl \
     iptables \
     nlohmann-json \
+    systemd \
 "
 
 RDEPENDS:${PN} = " \
@@ -29,6 +30,7 @@ RDEPENDS:${PN} = " \
     wpa-supplicant \
     iproute2 \
     iptables \
+    libsystemd \
 "
 
 # ── Build ─────────────────────────────────────────────────────────
@@ -60,4 +62,5 @@ do_install:append() {
 
 FILES:${PN} += " \
     ${sysconfdir}/netservice/ \
+    ${sbindir}/mock_consumer \
 "

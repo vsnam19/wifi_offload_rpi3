@@ -6,6 +6,11 @@
 // Routing side-effects (addDefaultRoute / removeDefaultRoute) are injected
 // as callbacks so the FSM has no direct dependency on RoutingPolicyManager —
 // enabling clean unit testing without a kernel Netlink socket.
+//
+// OPEN POINT OP-1: Fallback chain WiFi→B2C→B2B: who decides the trigger and
+//   manages the chain?  Currently each class has an independent FSM with no
+//   cross-class awareness.  Until OP-1 is resolved, do NOT add fallback logic
+//   here.  The api/ layer (or a future FallbackOrchestrator) will own this.
 
 #pragma once
 
