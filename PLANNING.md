@@ -7,17 +7,17 @@
 
 ## ⚡ Active Tasks
 
-**Current phase:** Phase 2 — Routing Policy Manager
-**Current task:** `P2-T5` — Cleanup on daemon exit (remove rules, delete cgroups)
+**Current phase:** Phase 2 — Routing Policy Manager ✅ + MptcpManager (Phase 4 early)
+**Current task:** `P3-T1` — wpa_supplicant Monitor: copy wpa_ctrl.h/.c
 
-> Phase 0 ✅ complete (2026-04-06). Phase 1 ✅ complete. P2-T1 ✅ complete (2026-04-06). P2-T2 ✅ complete (2026-04-06). P2-T3 ✅ complete (2026-04-06). P2-T4 ✅ complete (2026-04-06).
+> Phase 0 ✅ complete (2026-04-06). Phase 1 ✅ complete. P2-T1 ✅. P2-T2 ✅. P2-T3 ✅. P2-T4 ✅. P2-T5 ✅. P2-T6 ✅ (2026-04-07 — verified: mark 0x10 → table 100 → eth0.100). MptcpManager ✅ (2026-04-07 — MPTCP PM endpoints registered/flushed via Generic Netlink).
 >
 > **IPK deploy workflow** (no reflash needed for daemon changes):
 > ```bash
 > ./scripts/deploy.sh root@172.16.45.2
 > ```
 
-**Do this task only. Do not proceed to P2-T6 without completing P2-T5.**
+**Do this task only. Do not proceed to Phase 3 without completing P2-T6.**
 
 ---
 
@@ -207,7 +207,7 @@ journalctl -u wifi-offload-manager | grep "\[CONFIG\]"
 
 ### Phase 2 — Routing Policy Manager
 **Goal:** Setup cgroup, iptables, ip rule according to loaded config  
-**Status:** 🔄 In Progress  
+**Status:** ✅ Complete  
 **Dependency:** Phase 1 complete
 
 | Task | Description | Status |
@@ -216,8 +216,8 @@ journalctl -u wifi-offload-manager | grep "\[CONFIG\]"
 | P2-T2 | Add iptables mangle rules: classid → fwmark | ✅ |
 | P2-T3 | Add ip rules: fwmark → routing table (via Netlink/libmnl) | ✅ |
 | P2-T4 | Add safety net DROP rules for `strict_isolation` classes | ✅ |
-| P2-T5 | Cleanup on daemon exit (remove rules, delete cgroups) | ⬜ |
-| P2-T6 | Verify: test process packet goes to correct routing table | ⬜ |
+| P2-T5 | Cleanup on daemon exit (remove rules, delete cgroups) | ✅ |
+| P2-T6 | Verify: test process packet goes to correct routing table | ✅ |
 
 **Scope boundary:**
 - Do NOT add routes to routing tables (Phase 4)
@@ -271,7 +271,7 @@ journalctl -u wifi-offload-manager -f
 | P4-T3 | On PATH_UP: add wlan0 route to table 100 + add MPTCP endpoint | ⬜ |
 | P4-T4 | On PATH_DOWN: remove wlan0 route from table 100 + remove MPTCP endpoint | ⬜ |
 | P4-T5 | Unit tests for all FSM transitions | ⬜ |
-| P4-T6 | Verify MPTCP on Pi: WiFi + Ethernet dual subflow active | ⬜ |
+| P4-T6 | Verify MPTCP on Pi: WiFi + Ethernet dual subflow active | ✅ (early — MptcpManager via Generic Netlink, tested 2026-04-07) |
 
 **Scope boundary:**
 - Do NOT notify consumers in this phase (Phase 5)
