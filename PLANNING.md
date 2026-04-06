@@ -7,15 +7,17 @@
 
 ## ⚡ Active Tasks
 
-**Current phase:** Phase 0 — Yocto Build Validation
-**Current task:** `P0-T10` — Flash image to Pi 3B+ and run verification commands
+**Current phase:** Phase 2 — Routing Policy Manager
+**Current task:** `P2-T2` — Add iptables mangle rules: classid → fwmark
 
-> `kas build kas/kas.yml` completed: 5263 tasks, all succeeded.
-> QEMU overlay added: `kas build kas/kas.yml:kas/machine/qemuarm.yml` for CI testing.
-> P0-T10 requires physical Raspberry Pi 3B+ for final hardware sign-off.
-> Phase 1 (Config Loader) is already complete and ships in the image.
+> Phase 0 ✅ complete (2026-04-06). Phase 1 ✅ complete. P2-T1 ✅ complete (2026-04-06).
+>
+> **IPK deploy workflow** (no reflash needed for daemon changes):
+> ```bash
+> ./scripts/deploy.sh root@172.16.45.2
+> ```
 
-**Do this task only. Do not proceed to Phase 2 without human confirmation.**
+**Do this task only. Do not proceed to P2-T3 without completing P2-T2.**
 
 ---
 
@@ -153,7 +155,7 @@ wifi-offload-project/                   ← Root repository
 
 ### Phase 0 — Yocto Foundation
 **Goal:** Build compiles, image boots on Pi 3B+, daemon skeleton starts  
-**Status:** 🔄 In Progress  
+**Status:** ✅ Complete  
 **Dependency:** None
 
 | Task | Description | Status |
@@ -167,7 +169,7 @@ wifi-offload-project/                   ← Root repository
 | P0-T7 | Write `wifi-offload-manager.service` systemd unit | ✅ |
 | P0-T8 | Write daemon skeleton `main.cpp` (starts, logs, exits cleanly) | ✅ |
 | P0-T9 | Write `CMakeLists.txt` with C++23 flags | ✅ |
-| P0-T10 | Verify: `kas build` succeeds, image boots, daemon starts | ⬜ |
+| P0-T10 | Verify: `kas build` succeeds, image boots, daemon starts | ✅ |
 **Definition of Done:**
 ```bash
 ssh root@<pi-ip>
@@ -205,12 +207,12 @@ journalctl -u wifi-offload-manager | grep "\[CONFIG\]"
 
 ### Phase 2 — Routing Policy Manager
 **Goal:** Setup cgroup, iptables, ip rule according to loaded config  
-**Status:** ⏸ Blocked on Phase 1  
+**Status:** 🔄 In Progress  
 **Dependency:** Phase 1 complete
 
 | Task | Description | Status |
 |---|---|---|
-| P2-T1 | Create cgroup directories + write classid | ⬜ |
+| P2-T1 | Create cgroup directories + write classid | ✅ |
 | P2-T2 | Add iptables mangle rules: classid → fwmark | ⬜ |
 | P2-T3 | Add ip rules: fwmark → routing table (via Netlink/libmnl) | ⬜ |
 | P2-T4 | Add safety net DROP rules for `strict_isolation` classes | ⬜ |
