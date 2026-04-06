@@ -29,6 +29,20 @@ public:
     // ENOENT treated as success (already removed).
     void removeEndpoints() noexcept;
 
+    // ── P4-T3 / P4-T4 ─────────────────────────────────────────────
+    // Per-interface endpoint management — called by PathStateFsm via main.cpp.
+    // Only meaningful for classes with mptcp_enabled: true.
+    //
+    // addEndpointForIface: add MPTCP subflow endpoint for <iface>.
+    //   No-op (returns success) if the interface has no IPv4 address yet.
+    //
+    // removeEndpointForIface: remove MPTCP subflow endpoint for <iface>.
+    //   ENOENT (endpoint already absent) is treated as success.
+    [[nodiscard]] std::expected<void, RoutingError>
+    addEndpointForIface(std::string_view iface);
+
+    void removeEndpointForIface(std::string_view iface) noexcept;
+
 private:
     std::vector<PathClassConfig> classes_;
 

@@ -32,8 +32,8 @@ add_executable(wifi-offload-manager
     src/mptcp/mptcp_manager.cpp              # Phase 4 (brought forward)
     src/wpa/wpa_ctrl.c                       # P3-T1: upstream wpa_ctrl (unmodified)
     src/wpa/wpa_monitor.cpp                  # P3-T2..T5
-    # Phase 4+:
-    # src/fsm/path_state_fsm.cpp
+    src/fsm/path_state_fsm.cpp               # P4-T1/T2
+    # Phase 5+:
     # src/api/consumer_api_server.cpp
 )
 

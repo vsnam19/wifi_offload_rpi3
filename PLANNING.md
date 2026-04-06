@@ -7,17 +7,17 @@
 
 ## ⚡ Active Tasks
 
-**Current phase:** Phase 3 — wpa_supplicant Monitor ✅
-**Current task:** `P4-T1` — Path State FSM: implement states and transitions
+**Current phase:** Phase 4 — Path State FSM ✅
+**Current task:** `P5-T1` — Consumer Registration API: Unix socket server
 
-> Phase 0 ✅ complete (2026-04-06). Phase 1 ✅ complete. P2-T1 ✅. P2-T2 ✅. P2-T3 ✅. P2-T4 ✅. P2-T5 ✅. P2-T6 ✅ (2026-04-07 — verified: mark 0x10 → table 100 → eth0.100). MptcpManager ✅ (2026-04-07 — MPTCP PM endpoints registered/flushed via Generic Netlink). P3-T1..T5 ✅ (2026-04-07 — WpaMonitor: connect/attach/event-loop, event parsing, RSSI extraction, callback interface).
+> Phase 0 ✅ complete (2026-04-06). Phase 1 ✅ complete. P2-T1 ✅. P2-T2 ✅. P2-T3 ✅. P2-T4 ✅. P2-T5 ✅. P2-T6 ✅ (2026-04-07 — verified: mark 0x10 → table 100 → eth0.100). MptcpManager ✅ (2026-04-07 — MPTCP PM endpoints registered/flushed via Generic Netlink). P3-T1..T5 ✅ (2026-04-07 — WpaMonitor: connect/attach/event-loop, event parsing, RSSI extraction, callback interface). P4-T1..T5 ✅ (2026-04-07 — PathStateFsm: all state transitions, RSSI thresholds, route/MPTCP wiring in main.cpp, 22 unit tests passing).
 >
 > **IPK deploy workflow** (no reflash needed for daemon changes):
 > ```bash
 > ./scripts/deploy.sh root@172.16.45.2
 > ```
 
-**Do this task only. Do not proceed to Phase 4 without completing P3-T5.**
+**Do this task only. Do not proceed to Phase 5 without completing P4-T5.**
 
 ---
 
@@ -261,16 +261,16 @@ journalctl -u wifi-offload-manager -f
 
 ### Phase 4 — Path State FSM
 **Goal:** FSM coordinates path state, updates routing table, manages MPTCP endpoints  
-**Status:** ⏸ Blocked on Phase 2 + Phase 3  
+**Status:** ✅ Complete (2026-04-07)  
 **Dependency:** Phase 2 + Phase 3 complete
 
 | Task | Description | Status |
 |---|---|---|
-| P4-T1 | Implement FSM states and transitions | ⬜ |
-| P4-T2 | RSSI threshold checks (rssi_warn, rssi_drop — read from config or defaults) | ⬜ |
-| P4-T3 | On PATH_UP: add wlan0 route to table 100 + add MPTCP endpoint | ⬜ |
-| P4-T4 | On PATH_DOWN: remove wlan0 route from table 100 + remove MPTCP endpoint | ⬜ |
-| P4-T5 | Unit tests for all FSM transitions | ⬜ |
+| P4-T1 | Implement FSM states and transitions | ✅ |
+| P4-T2 | RSSI threshold checks (rssi_warn, rssi_drop — read from config or defaults) | ✅ |
+| P4-T3 | On PATH_UP: add wlan0 route to table 100 + add MPTCP endpoint | ✅ |
+| P4-T4 | On PATH_DOWN: remove wlan0 route from table 100 + remove MPTCP endpoint | ✅ |
+| P4-T5 | Unit tests for all FSM transitions | ✅ |
 | P4-T6 | Verify MPTCP on Pi: WiFi + Ethernet dual subflow active | ✅ (early — MptcpManager via Generic Netlink, tested 2026-04-07) |
 
 **Scope boundary:**
