@@ -6,6 +6,7 @@
 #include <cerrno>
 #include <cstring>
 #include <ctime>
+#include <algorithm>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -37,8 +38,10 @@ constexpr std::string_view kCgroupNetClsRoot = "/sys/fs/cgroup/net_cls";
 
 // ── P2-T2 constants ───────────────────────────────────────────────
 constexpr const char* kMangleTable     = "mangle";
+constexpr const char* kFilterTable     = "filter";
 constexpr const char* kOutputChain     = "OUTPUT";
 constexpr const char* kNetserviceChain = "NETSERVICE-MARK";
+constexpr const char* kIsoChain        = "NETSERVICE-ISO";
 
 // Align to XT_ALIGN boundary (same as XT_ALIGN macro in x_tables.h).
 // On ARM EABI, alignof(_xt_align) = 8 (due to __u64 member).
@@ -110,6 +113,55 @@ std::vector<uint8_t> buildJumpEntry(const char* toChain)
     // verdict is resolved by libiptc at commit time
 
     e->target_offset = static_cast<uint16_t>(kHdrSz);
+    e->next_offset   = static_cast<uint16_t>(kTotal);
+
+    return buf;
+}
+
+// Build a heap buffer for:
+//   -o <outiface> -m mark --mark <mark>/0xffffffff -j DROP
+// Used for strict_isolation safety-net rules in the filter table.
+//
+// Target: standard target with empty name + DROP verdict (-NF_DROP - 1 = -1).
+// Match:  "mark" revision 1 (xt_mark_mtinfo1: mark + mask + invert).
+std::vector<uint8_t> buildDropEntry(std::string_view outiface, uint32_t mark)
+{
+    constexpr size_t kMatchSz  = xtAlign(sizeof(xt_entry_match) + sizeof(xt_mark_mtinfo1));
+    constexpr size_t kTargetSz = xtAlign(sizeof(xt_standard_target));
+    constexpr size_t kHdrSz    = xtAlign(sizeof(ipt_entry));
+    constexpr size_t kTotal    = kHdrSz + kMatchSz + kTargetSz;
+
+    std::vector<uint8_t> buf(kTotal, 0);
+
+    auto* e  = reinterpret_cast<ipt_entry*>          (buf.data());
+    auto* m  = reinterpret_cast<xt_entry_match*>     (buf.data() + kHdrSz);
+    auto* mk = reinterpret_cast<xt_mark_mtinfo1*>    (m->data);
+    auto* t  = reinterpret_cast<xt_standard_target*> (buf.data() + kHdrSz + kMatchSz);
+
+    // Output interface filter (in ipt_ip, no extension needed)
+    const std::size_t ifLen = std::min(outiface.size(), static_cast<std::size_t>(IFNAMSIZ - 1));
+    std::memcpy(e->ip.outiface,      outiface.data(), ifLen);
+    std::memset(e->ip.outiface_mask, 0xFF, ifLen + 1); // +1 covers the '\0'
+
+    // Match: "mark" revision 1
+    m->u.user.match_size = static_cast<uint16_t>(kMatchSz);
+    std::strncpy(m->u.user.name, "mark", XT_EXTENSION_MAXNAMELEN - 1);
+    m->u.user.revision  = 1;
+    mk->mark            = mark;
+    mk->mask            = 0xFFFFFFFFu;
+    mk->invert          = 0;
+
+    // Target: standard DROP
+    // iptcc_map_target() dispatches on user.name:
+    //   ""     → IPTCC_R_FALLTHROUGH (no-op!)
+    //   "DROP" → iptcc_standard_map(r, -NF_DROP-1) → IPTCC_R_STANDARD ✓
+    // iptcc_standard_map overwrites user.name → "" and verdict → -NF_DROP-1
+    // before the table is sent to the kernel via setsockopt.
+    t->target.u.user.target_size = static_cast<uint16_t>(kTargetSz);
+    std::strncpy(t->target.u.user.name, "DROP", XT_EXTENSION_MAXNAMELEN - 1);
+    t->verdict = -NF_DROP - 1; // = -1  (NF_DROP = 0)
+
+    e->target_offset = static_cast<uint16_t>(kHdrSz + kMatchSz);
     e->next_offset   = static_cast<uint16_t>(kTotal);
 
     return buf;
@@ -411,6 +463,166 @@ void RoutingPolicyManager::removeIpRules() noexcept
     }
 }
 
+// ── P2-T4 ─────────────────────────────────────────────────────────
+
+std::expected<void, RoutingError> RoutingPolicyManager::addDropRules()
+{
+    // Check whether any class requires strict isolation — skip entirely if not.
+    const bool anyIsolation = std::ranges::any_of(classes_,
+        [](const auto& c) { return c.strictIsolation; });
+    if (!anyIsolation) {
+        logger::info("[ROUTING] no strict_isolation classes — skipping DROP rules");
+        return {};
+    }
+
+    logger::info("[ROUTING] setting up strict_isolation DROP rules");
+
+    // ── 1. Open filter table ──────────────────────────────────────
+    struct xtc_handle* raw = iptc_init(kFilterTable);
+    if (!raw) {
+        logger::error("[ROUTING] iptc_init(filter) failed: {}", iptc_strerror(errno));
+        return std::unexpected(RoutingError::IptablesError);
+    }
+    auto h = std::unique_ptr<xtc_handle, decltype(&iptc_free)>{raw, iptc_free};
+
+    // ── 2. Create (or flush) NETSERVICE-ISO user chain ────────────
+    if (iptc_is_chain(kIsoChain, h.get())) {
+        if (!iptc_flush_entries(kIsoChain, h.get())) {
+            logger::error("[ROUTING] flush chain {} failed: {}",
+                          kIsoChain, iptc_strerror(errno));
+            return std::unexpected(RoutingError::IptablesError);
+        }
+        logger::info("[ROUTING] flushed existing chain {}", kIsoChain);
+    } else {
+        if (!iptc_create_chain(kIsoChain, h.get())) {
+            logger::error("[ROUTING] create chain {} failed: {}",
+                          kIsoChain, iptc_strerror(errno));
+            return std::unexpected(RoutingError::IptablesError);
+        }
+    }
+
+    // ── 3. Ensure OUTPUT → NETSERVICE-ISO jump exists ─────────────
+    bool jumpExists = false;
+    for (const ipt_entry* e = iptc_first_rule(kOutputChain, h.get());
+         e != nullptr;
+         e = iptc_next_rule(e, h.get())) {
+        if (std::string_view{iptc_get_target(e, h.get())} == kIsoChain) {
+            jumpExists = true;
+            break;
+        }
+    }
+    if (!jumpExists) {
+        auto jumpBuf = buildJumpEntry(kIsoChain);
+        const auto* je = reinterpret_cast<const ipt_entry*>(jumpBuf.data());
+        if (!iptc_append_entry(kOutputChain, je, h.get())) {
+            logger::error("[ROUTING] append OUTPUT→{} jump failed: {}",
+                          kIsoChain, iptc_strerror(errno));
+            return std::unexpected(RoutingError::IptablesError);
+        }
+        logger::info("[ROUTING] added OUTPUT jump to {}", kIsoChain);
+    } else {
+        logger::info("[ROUTING] OUTPUT jump to {} already present", kIsoChain);
+    }
+
+    // ── 4. Compute and append DROP rules ──────────────────────────
+    // Collect all interfaces mentioned across all classes (deduplicated).
+    std::vector<std::string> allIfaces;
+    for (const auto& cls : classes_) {
+        for (const auto& iface : cls.interfaces) {
+            if (std::ranges::find(allIfaces, iface) == allIfaces.end()) {
+                allIfaces.push_back(iface);
+            }
+        }
+    }
+
+    auto appendDrop = [&](std::string_view iface, uint32_t mark,
+                          std::string_view reason) -> std::expected<void, RoutingError> {
+        auto ruleBuf = buildDropEntry(iface, mark);
+        const auto* re = reinterpret_cast<const ipt_entry*>(ruleBuf.data());
+        if (!iptc_append_entry(kIsoChain, re, h.get())) {
+            logger::error("[ROUTING] append DROP rule failed: -o {} --mark 0x{:x}: {}",
+                          iface, mark, iptc_strerror(errno));
+            return std::unexpected(RoutingError::IptablesError);
+        }
+        logger::info("[ROUTING] DROP rule added: -o {} --mark 0x{:x}  # {}",
+                     iface, mark, reason);
+        return {};
+    };
+
+    for (const auto& S : classes_) {
+        if (!S.strictIsolation) { continue; }
+
+        // (a) S's traffic must not exit on interfaces NOT in S.interfaces
+        for (const auto& iface : allIfaces) {
+            if (std::ranges::find(S.interfaces, iface) == S.interfaces.end()) {
+                auto desc = std::format("{} → no {}", S.id, iface);
+                if (auto r = appendDrop(iface, S.mark, desc); !r) { return r; }
+            }
+        }
+
+        // (b) Every other class B's traffic must not exit on S's interfaces
+        for (const auto& B : classes_) {
+            if (B.id == S.id) { continue; }
+            for (const auto& iface : S.interfaces) {
+                auto desc = std::format("{} → no {} (strict_isolation)", B.id, iface);
+                if (auto r = appendDrop(iface, B.mark, desc); !r) { return r; }
+            }
+        }
+    }
+
+    // ── 5. Commit ─────────────────────────────────────────────────
+    if (!iptc_commit(h.get())) {
+        logger::error("[ROUTING] iptc_commit(filter) failed: {}", iptc_strerror(errno));
+        return std::unexpected(RoutingError::IptablesError);
+    }
+
+    logger::info("[ROUTING] strict_isolation DROP rules committed");
+    return {};
+}
+
+void RoutingPolicyManager::removeDropRules() noexcept
+{
+    struct xtc_handle* raw = iptc_init(kFilterTable);
+    if (!raw) {
+        logger::warn("[ROUTING] cleanup: iptc_init(filter) failed: {}", iptc_strerror(errno));
+        return;
+    }
+    auto h = std::unique_ptr<xtc_handle, decltype(&iptc_free)>{raw, iptc_free};
+
+    if (!iptc_is_chain(kIsoChain, h.get())) {
+        return; // nothing to clean up
+    }
+
+    // Delete the OUTPUT → NETSERVICE-ISO jump rule
+    unsigned int ruleNum = 0;
+    for (const ipt_entry* e = iptc_first_rule(kOutputChain, h.get());
+         e != nullptr;
+         e = iptc_next_rule(e, h.get()), ++ruleNum) {
+        if (std::string_view{iptc_get_target(e, h.get())} == kIsoChain) {
+            if (!iptc_delete_num_entry(kOutputChain, ruleNum, h.get())) {
+                logger::warn("[ROUTING] cleanup: delete OUTPUT→{} jump failed: {}",
+                             kIsoChain, iptc_strerror(errno));
+            }
+            break;
+        }
+    }
+
+    if (!iptc_flush_entries(kIsoChain, h.get())) {
+        logger::warn("[ROUTING] cleanup: flush {} failed: {}",
+                     kIsoChain, iptc_strerror(errno));
+    }
+    if (!iptc_delete_chain(kIsoChain, h.get())) {
+        logger::warn("[ROUTING] cleanup: delete chain {} failed: {}",
+                     kIsoChain, iptc_strerror(errno));
+    }
+
+    if (!iptc_commit(h.get())) {
+        logger::warn("[ROUTING] cleanup: iptc_commit(filter) failed: {}", iptc_strerror(errno));
+    } else {
+        logger::info("[ROUTING] cleanup: DROP rules removed");
+    }
+}
+
 void RoutingPolicyManager::removeIptablesMarkRules() noexcept
 {
     struct xtc_handle* raw = iptc_init(kMangleTable);
@@ -460,7 +672,10 @@ void RoutingPolicyManager::cleanup() noexcept
     // P2-T3: remove ip rules first
     removeIpRules();
 
-    // P2-T2: remove iptables rules
+    // P2-T4: remove DROP rules
+    removeDropRules();
+
+    // P2-T2: remove iptables MARK rules
     removeIptablesMarkRules();
 
     // P2-T1: remove cgroup directories in reverse order (children before parents).

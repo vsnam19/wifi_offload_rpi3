@@ -94,7 +94,15 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    // TODO Phase 2-T4: addDropRules for strict_isolation
+    // ── Phase 2-T4: add strict_isolation DROP rules ────────────────
+    if (auto result = routingMgr.addDropRules(); !result) {
+        logger::error("[MAIN] DROP rules setup failed: {}",
+            netservice::toString(result.error()));
+        routingMgr.cleanup();
+        logger::close();
+        return EXIT_FAILURE;
+    }
+
     // TODO Phase 3: pass pathClasses to WpaMonitor
     // TODO Phase 4: pass pathClasses to PathStateFsm
     // TODO Phase 5: pass pathClasses to ConsumerApiServer

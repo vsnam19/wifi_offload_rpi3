@@ -6,7 +6,7 @@
 //   P2-T1  createCgroupHierarchy()  — mkdir + write net_cls.classid per class
 //   P2-T2  addIptablesMarkRules()   — iptables mangle OUTPUT: classid→fwmark
 //   P2-T3  addIpRules()             — ip rule: fwmark → routing table (Netlink)
-//   P2-T4  (next) addDropRules() for strict_isolation classes
+//   P2-T4  addDropRules()           — iptables filter DROP: strict_isolation safety net
 //   P2-T5  (next) cleanup()
 //
 // Module boundary: does NOT know consumer PIDs, does NOT add routes to
@@ -50,10 +50,20 @@ public:
     // Implemented via Netlink RTM_NEWRULE (libmnl). Idempotent (EEXIST → ok).
     [[nodiscard]] std::expected<void, RoutingError> addIpRules();
 
+    // ── P2-T4 ─────────────────────────────────────────────────────
+    // For each class with strict_isolation=true (e.g. lte_b2b), install
+    // safety-net DROP rules in the filter table OUTPUT chain:
+    //   (a) class's fwmark must not exit on any interface NOT in its own list
+    //   (b) every other class's fwmark must not exit on the isolation class's
+    //       interfaces
+    // Rules are collected in a dedicated NETSERVICE-ISO user chain (idempotent).
+    [[nodiscard]] std::expected<void, RoutingError> addDropRules();
+
     // ── P2-T5 (partial) ───────────────────────────────────────────
     // Remove all kernel state created by this manager:
     //   - ip rules (P2-T3)
-    //   - iptables rules in NETSERVICE-MARK chain (P2-T2)
+    //   - iptables DROP rules in NETSERVICE-ISO chain (P2-T4)
+    //   - iptables MARK rules in NETSERVICE-MARK chain (P2-T2)
     //   - cgroup directories (P2-T1)
     // Called on clean daemon shutdown.
     void cleanup() noexcept;
@@ -70,6 +80,9 @@ private:
 
     // Remove ip rules added by addIpRules() (called from cleanup).
     void removeIpRules() noexcept;
+
+    // Remove DROP rules added by addDropRules() (called from cleanup).
+    void removeDropRules() noexcept;
 };
 
 } // namespace netservice
