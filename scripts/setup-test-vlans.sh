@@ -30,7 +30,15 @@ declare -A TABLE=([100]=100 [200]=200 [300]=300)
 RPI_IFACE="eth0"
 
 # ── helpers ────────────────────────────────────────────────────────────────
-ipt_add()  { iptables -C "$@" 2>/dev/null || iptables -A "$@"; }
+# ipt_add inserts FORWARD rules at position 1 to stay ahead of Docker's DROP rules.
+# Docker uses `-I` to insert its rules at the top; `-A` would land behind them.
+ipt_add()  {
+    if [[ "$1" == "FORWARD" ]]; then
+        iptables -C "$@" 2>/dev/null || iptables -I "$@" 1
+    else
+        iptables -C "$@" 2>/dev/null || iptables -A "$@"
+    fi
+}
 ipt_del()  { iptables -D "$@" 2>/dev/null || true; }
 nat_add()  { iptables -t nat -C "$@" 2>/dev/null || iptables -t nat -A "$@"; }
 nat_del()  { iptables -t nat -D "$@" 2>/dev/null || true; }
@@ -69,6 +77,13 @@ if [[ "$ACTION" == "down" ]]; then
         ip route del default table 200 2>/dev/null && echo "  table 200 cleared" || true
         ip route del default table 300 2>/dev/null && echo "  table 300 cleared" || true
     ' 2>/dev/null || echo "  (ssh to RPi failed — manual cleanup may be needed)"
+
+    echo "==> Removing source-based ip rules on RPi"
+    ssh "${RPI_SSH}" '
+        ip rule del from 172.16.1.2 lookup 100 prio 100 2>/dev/null || true
+        ip rule del from 172.16.2.2 lookup 200 prio 100 2>/dev/null || true
+        ip rule del from 172.16.3.2 lookup 300 prio 100 2>/dev/null || true
+    ' 2>/dev/null || echo "  (ssh to RPi failed — manual ip rule del needed)"
 
     sysctl -qw net.ipv4.ip_forward=0
     echo "Done."
@@ -133,6 +148,13 @@ ssh -o StrictHostKeyChecking=no -o BatchMode=yes "${RPI_SSH}" "
         ip route replace default via 172.16.3.1 dev ${RPI_IFACE}.300 table 300 && echo '  table 300: via 172.16.3.1'
     "
 }
+
+echo "==> Adding source-based ip rules on RPi (ensures correct table per VLAN source IP)"
+ssh -o StrictHostKeyChecking=no -o BatchMode=yes "${RPI_SSH}" '
+    ip rule add from 172.16.1.2 lookup 100 prio 100 2>/dev/null && echo "  from 172.16.1.2 → table 100" || echo "  from 172.16.1.2 → table 100 (already exists)"
+    ip rule add from 172.16.2.2 lookup 200 prio 100 2>/dev/null && echo "  from 172.16.2.2 → table 200" || echo "  from 172.16.2.2 → table 200 (already exists)"
+    ip rule add from 172.16.3.2 lookup 300 prio 100 2>/dev/null && echo "  from 172.16.3.2 → table 300" || echo "  from 172.16.3.2 → table 300 (already exists)"
+' 2>/dev/null || echo "  (ssh to RPi failed — manual ip rule add needed)"
 
 echo ""
 echo "=== Host VLAN interfaces + addresses ==="
