@@ -68,6 +68,21 @@ public:
     // Called on clean daemon shutdown.
     void cleanup() noexcept;
 
+    // ── P4-T3 / P4-T4 ─────────────────────────────────────────────
+    // Dynamic WiFi route management — called by PathStateFsm via main.cpp.
+    //
+    // addWifiRoute: add a default route for <iface> in routing table <table>.
+    //   The gateway is looked up from /proc/net/route (DHCP-assigned).
+    //   If no gateway is found the route is added on-link (RT_SCOPE_LINK).
+    //   Idempotent: an existing route is replaced (NLM_F_REPLACE).
+    //
+    // removeWifiRoute: delete the default route for <iface> from <table>.
+    //   ENOENT (route already absent) is treated as success.
+    [[nodiscard]] std::expected<void, RoutingError>
+    addWifiRoute(std::string_view iface, uint32_t routingTable);
+
+    void removeWifiRoute(std::string_view iface, uint32_t routingTable) noexcept;
+
 private:
     std::span<const PathClassConfig> classes_; // non-owning view into config
 

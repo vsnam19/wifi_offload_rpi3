@@ -298,4 +298,60 @@ void MptcpManager::removeEndpoints() noexcept
     logger::info("[MPTCP] all endpoints flushed");
 }
 
+// ── P4-T3 / P4-T4 ─────────────────────────────────────────────────────────
+
+std::expected<void, RoutingError>
+MptcpManager::addEndpointForIface(std::string_view iface)
+{
+    auto familyId = resolveGenlFamily();
+    if (!familyId) return std::unexpected(familyId.error());
+
+    const std::string ifaceStr{iface};
+    uint32_t addr4 = ifaceAddr4(ifaceStr.c_str());
+    if (addr4 == 0) {
+        // Interface may not have an address yet — not an error (DHCP may be
+        // in progress). Caller can retry on next PATH_UP event.
+        logger::warn("[MPTCP] addEndpointForIface: no IPv4 address on {}, skipping", iface);
+        return {};
+    }
+
+    char addrStr[INET_ADDRSTRLEN];
+    ::inet_ntop(AF_INET, &addr4, addrStr, sizeof(addrStr));
+
+    auto result = sendEndpointCmd(*familyId, MPTCP_PM_CMD_ADD_ADDR,
+                                  ifaceStr.c_str(), addr4);
+    if (!result) {
+        logger::error("[MPTCP] addEndpointForIface failed: iface={} addr={}", iface, addrStr);
+        return result;
+    }
+
+    logger::info("[MPTCP] endpoint added: iface={} addr={} (subflow)", iface, addrStr);
+    return {};
+}
+
+void MptcpManager::removeEndpointForIface(std::string_view iface) noexcept
+{
+    auto familyId = resolveGenlFamily();
+    if (!familyId) {
+        logger::warn("[MPTCP] removeEndpointForIface: failed to resolve genl family");
+        return;
+    }
+
+    const std::string ifaceStr{iface};
+    uint32_t addr4 = ifaceAddr4(ifaceStr.c_str());
+    if (addr4 == 0) {
+        // Interface has no address — endpoint cannot exist.
+        logger::warn("[MPTCP] removeEndpointForIface: no IPv4 address on {}, skipping", iface);
+        return;
+    }
+
+    auto result = sendEndpointCmd(*familyId, MPTCP_PM_CMD_DEL_ADDR,
+                                  ifaceStr.c_str(), addr4);
+    if (!result) {
+        logger::warn("[MPTCP] removeEndpointForIface failed: iface={}", iface);
+    } else {
+        logger::info("[MPTCP] endpoint removed: iface={}", iface);
+    }
+}
+
 } // namespace netservice

@@ -21,10 +21,11 @@
 #include <linux/netfilter/xt_cgroup.h>
 #include <linux/netfilter/xt_mark.h>
 
-// Netlink / libmnl headers for P2-T3
+// Netlink / libmnl headers for P2-T3 and P4-T3/T4
 #include <libmnl/libmnl.h>
 #include <linux/rtnetlink.h>
 #include <linux/fib_rules.h>
+#include <net/if.h>        // if_nametoindex — P4-T3/T4
 
 namespace netservice {
 
@@ -702,6 +703,167 @@ void RoutingPolicyManager::cleanup() noexcept
                 logger::info("[ROUTING] cleanup: removed cgroup {}", realCgroupDir.string());
             }
         }
+    }
+}
+
+// ── P4-T3 / P4-T4 ─────────────────────────────────────────────────────────
+
+// Read the default gateway for <iface> from /proc/net/route.
+// Returns the gateway as a network-byte-order uint32_t, or 0 if not found.
+// /proc/net/route columns: Iface Destination Gateway Flags ...
+//   Destination = 0x00000000 for default; flags bit 0 = RTF_UP, bit 1 = RTF_GATEWAY.
+static uint32_t queryDefaultGateway(std::string_view iface) noexcept {
+    // IFNAMSIZ is 16 bytes (15 chars + null); %15s leaves room for the terminator.
+    static_assert(IFNAMSIZ == 16, "unexpected IFNAMSIZ — update format specifier");
+
+    std::ifstream f("/proc/net/route");
+    if (!f) return 0;
+
+    std::string line;
+    std::getline(f, line); // skip header
+
+    while (std::getline(f, line)) {
+        char name[IFNAMSIZ]{};
+        uint32_t dest{}, gw{};
+        unsigned int flags{};
+        // NOLINTNEXTLINE(cert-err34-c) — /proc/net/route has fixed-width hex fields
+        if (std::sscanf(line.c_str(), "%15s %x %x %x", name, &dest, &gw, &flags) == 4) {
+            // dest == 0 → default route; 0x1 = RTF_UP, 0x2 = RTF_GATEWAY
+            if (dest == 0 && (flags & 0x3u) == 0x3u && std::string_view{name} == iface) {
+                return gw;
+            }
+        }
+    }
+    return 0;
+}
+
+// Build and send one RTM_NEWROUTE or RTM_DELROUTE Netlink message for a
+// default route (0.0.0.0/0) on <iface> in routing <table>.
+// gateway == 0 → on-link route (RT_SCOPE_LINK, no RTA_GATEWAY attribute).
+[[nodiscard]] static std::expected<void, RoutingError>
+sendNetlinkRoute(uint16_t msgType, uint16_t extraFlags,
+                 const char* iface, uint32_t gateway, uint32_t table) noexcept
+{
+    char buf[4096];
+
+    struct mnl_socket* raw = mnl_socket_open(NETLINK_ROUTE);
+    if (!raw) {
+        logger::error("[ROUTING] mnl_socket_open failed: errno={} ({})",
+                      errno, std::strerror(errno));
+        return std::unexpected(RoutingError::NetlinkError);
+    }
+    auto nl = std::unique_ptr<mnl_socket, decltype(&mnl_socket_close)>{
+        raw, mnl_socket_close};
+
+    if (mnl_socket_bind(nl.get(), 0, MNL_SOCKET_AUTOPID) < 0) {
+        logger::error("[ROUTING] mnl_socket_bind failed: errno={} ({})",
+                      errno, std::strerror(errno));
+        return std::unexpected(RoutingError::NetlinkError);
+    }
+
+    const uint32_t seq    = static_cast<uint32_t>(std::time(nullptr));
+    const uint32_t portid = mnl_socket_get_portid(nl.get());
+
+    struct nlmsghdr* nlh = mnl_nlmsg_put_header(buf);
+    nlh->nlmsg_type  = msgType;
+    nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK
+                       | static_cast<uint16_t>(extraFlags);
+    nlh->nlmsg_seq   = seq;
+
+    auto* rtm = static_cast<struct rtmsg*>(
+        mnl_nlmsg_put_extra_header(nlh, sizeof(struct rtmsg)));
+    rtm->rtm_family   = AF_INET;
+    rtm->rtm_dst_len  = 0;           // default route: 0.0.0.0/0
+    rtm->rtm_src_len  = 0;
+    rtm->rtm_tos      = 0;
+    rtm->rtm_table    = RT_TABLE_UNSPEC; // actual table sent via RTA_TABLE
+    rtm->rtm_protocol = RTPROT_STATIC;
+    rtm->rtm_scope    = (gateway != 0) ? RT_SCOPE_UNIVERSE : RT_SCOPE_LINK;
+    rtm->rtm_type     = RTN_UNICAST;
+    rtm->rtm_flags    = 0;
+
+    mnl_attr_put_u32(nlh, RTA_TABLE, table);
+
+    const uint32_t ifindex = if_nametoindex(iface);
+    if (ifindex == 0) {
+        logger::error("[ROUTING] interface not found: {}", iface);
+        return std::unexpected(RoutingError::NetlinkError);
+    }
+    mnl_attr_put_u32(nlh, RTA_OIF, ifindex);
+
+    if (gateway != 0) {
+        mnl_attr_put(nlh, RTA_GATEWAY, sizeof(gateway), &gateway);
+    }
+
+    if (mnl_socket_sendto(nl.get(), nlh, nlh->nlmsg_len) < 0) {
+        logger::error("[ROUTING] mnl_socket_sendto failed: errno={} ({})",
+                      errno, std::strerror(errno));
+        return std::unexpected(RoutingError::NetlinkError);
+    }
+
+    const ssize_t nrecv = mnl_socket_recvfrom(nl.get(), buf, sizeof(buf));
+    if (nrecv < 0) {
+        if ((msgType == RTM_NEWROUTE && errno == EEXIST) ||
+            (msgType == RTM_DELROUTE && errno == ENOENT)) {
+            return {};
+        }
+        logger::error("[ROUTING] mnl_socket_recvfrom failed: errno={} ({})",
+                      errno, std::strerror(errno));
+        return std::unexpected(RoutingError::NetlinkError);
+    }
+
+    const int ret = mnl_cb_run(buf, static_cast<size_t>(nrecv), seq, portid,
+                               nullptr, nullptr);
+    if (ret < 0) {
+        if ((msgType == RTM_NEWROUTE && errno == EEXIST) ||
+            (msgType == RTM_DELROUTE && errno == ENOENT)) {
+            return {};
+        }
+        logger::error("[ROUTING] netlink route op=0x{:04x} failed: errno={} ({})",
+                      msgType, errno, std::strerror(errno));
+        return std::unexpected(RoutingError::NetlinkError);
+    }
+
+    return {};
+}
+
+std::expected<void, RoutingError>
+RoutingPolicyManager::addWifiRoute(std::string_view iface, uint32_t routingTable)
+{
+    const std::string ifaceStr{iface};
+    const uint32_t gw = queryDefaultGateway(iface);
+
+    auto result = sendNetlinkRoute(
+        RTM_NEWROUTE,
+        NLM_F_CREATE | NLM_F_REPLACE,
+        ifaceStr.c_str(),
+        gw,
+        routingTable);
+
+    if (!result) {
+        logger::error("[ROUTING] addWifiRoute failed: iface={} table={}", iface, routingTable);
+        return result;
+    }
+
+    logger::info("[ROUTING] WiFi route added: iface={} table={} scope={}",
+                 iface, routingTable, (gw ? "universe" : "link"));
+    return {};
+}
+
+void RoutingPolicyManager::removeWifiRoute(std::string_view iface,
+                                           uint32_t routingTable) noexcept
+{
+    const std::string ifaceStr{iface};
+    auto result = sendNetlinkRoute(
+        RTM_DELROUTE, 0,
+        ifaceStr.c_str(),
+        0,      // gateway not needed for deletion match
+        routingTable);
+
+    if (!result) {
+        logger::warn("[ROUTING] removeWifiRoute failed: iface={} table={}", iface, routingTable);
+    } else {
+        logger::info("[ROUTING] WiFi route removed: iface={} table={}", iface, routingTable);
     }
 }
 
