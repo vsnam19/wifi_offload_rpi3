@@ -5,7 +5,7 @@
 // Phase 2 scope:
 //   P2-T1  createCgroupHierarchy()  — mkdir + write net_cls.classid per class
 //   P2-T2  addIptablesMarkRules()   — iptables mangle OUTPUT: classid→fwmark
-//   P2-T3  (next) addIpRules()
+//   P2-T3  addIpRules()             — ip rule: fwmark → routing table (Netlink)
 //   P2-T4  (next) addDropRules() for strict_isolation classes
 //   P2-T5  (next) cleanup()
 //
@@ -44,10 +44,17 @@ public:
     // allow atomic flush+recreate on daemon restart (idempotent).
     [[nodiscard]] std::expected<void, RoutingError> addIptablesMarkRules();
 
-    // ── P2-T5 (stub) ──────────────────────────────────────────────
+    // ── P2-T3 ─────────────────────────────────────────────────────
+    // For each path class, add an ip rule:
+    //   ip rule add fwmark <mark> lookup <routing_table>
+    // Implemented via Netlink RTM_NEWRULE (libmnl). Idempotent (EEXIST → ok).
+    [[nodiscard]] std::expected<void, RoutingError> addIpRules();
+
+    // ── P2-T5 (partial) ───────────────────────────────────────────
     // Remove all kernel state created by this manager:
-    //   - cgroup directories (P2-T1)
+    //   - ip rules (P2-T3)
     //   - iptables rules in NETSERVICE-MARK chain (P2-T2)
+    //   - cgroup directories (P2-T1)
     // Called on clean daemon shutdown.
     void cleanup() noexcept;
 
@@ -60,6 +67,9 @@ private:
 
     // Remove iptables rules managed by this instance (called from cleanup).
     void removeIptablesMarkRules() noexcept;
+
+    // Remove ip rules added by addIpRules() (called from cleanup).
+    void removeIpRules() noexcept;
 };
 
 } // namespace netservice

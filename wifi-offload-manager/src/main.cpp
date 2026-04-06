@@ -85,7 +85,15 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    // TODO Phase 2-T3: addIpRules
+    // ── Phase 2-T3: add ip fwmark rules ──────────────────────────
+    if (auto result = routingMgr.addIpRules(); !result) {
+        logger::error("[MAIN] ip rules setup failed: {}",
+            netservice::toString(result.error()));
+        routingMgr.cleanup();
+        logger::close();
+        return EXIT_FAILURE;
+    }
+
     // TODO Phase 2-T4: addDropRules for strict_isolation
     // TODO Phase 3: pass pathClasses to WpaMonitor
     // TODO Phase 4: pass pathClasses to PathStateFsm

@@ -1,10 +1,11 @@
-// routing_policy_manager.cpp — P2-T1/P2-T2: cgroup net_cls hierarchy + iptables MARK rules
+// routing_policy_manager.cpp — P2-T1/P2-T2/P2-T3: cgroup + iptables MARK + ip rules
 
 #include "routing/routing_policy_manager.hpp"
 #include "common/logger.hpp"
 
 #include <cerrno>
 #include <cstring>
+#include <ctime>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -18,6 +19,11 @@
 #include <linux/netfilter/x_tables.h>
 #include <linux/netfilter/xt_cgroup.h>
 #include <linux/netfilter/xt_mark.h>
+
+// Netlink / libmnl headers for P2-T3
+#include <libmnl/libmnl.h>
+#include <linux/rtnetlink.h>
+#include <linux/fib_rules.h>
 
 namespace netservice {
 
@@ -107,6 +113,97 @@ std::vector<uint8_t> buildJumpEntry(const char* toChain)
     e->next_offset   = static_cast<uint16_t>(kTotal);
 
     return buf;
+}
+
+// ── P2-T3 constants ────────────────────────────────────────────────────────
+// Priority slightly below the default rules (32766 = default, 32767 = local).
+constexpr uint32_t kIpRulePriority = 32765u;
+
+// Single helper that builds and sends one RTM_NEWRULE or RTM_DELRULE message.
+// For RTM_NEWRULE, pass NLM_F_CREATE | NLM_F_EXCL as extraFlags.
+// For RTM_DELRULE, pass 0 as extraFlags.
+//
+// EEXIST (add of existing rule) and ENOENT (delete of absent rule) are
+// silently treated as success because the invariant is already satisfied.
+[[nodiscard]] static std::expected<void, RoutingError>
+sendNetlinkFwmarkRule(uint16_t msgType, uint16_t extraFlags,
+                      uint32_t fwmark, uint32_t table)
+{
+    // 4096 bytes is more than enough for a single rule message.
+    char buf[4096];
+
+    struct mnl_socket* raw = mnl_socket_open(NETLINK_ROUTE);
+    if (!raw) {
+        logger::error("[ROUTING] mnl_socket_open failed: errno={} ({})",
+                      errno, std::strerror(errno));
+        return std::unexpected(RoutingError::NetlinkError);
+    }
+    auto nl = std::unique_ptr<mnl_socket, decltype(&mnl_socket_close)>{
+        raw, mnl_socket_close};
+
+    if (mnl_socket_bind(nl.get(), 0, MNL_SOCKET_AUTOPID) < 0) {
+        logger::error("[ROUTING] mnl_socket_bind failed: errno={} ({})",
+                      errno, std::strerror(errno));
+        return std::unexpected(RoutingError::NetlinkError);
+    }
+
+    const uint32_t seq    = static_cast<uint32_t>(std::time(nullptr));
+    const uint32_t portid = mnl_socket_get_portid(nl.get());
+
+    // Build the Netlink message.
+    struct nlmsghdr* nlh = mnl_nlmsg_put_header(buf);
+    nlh->nlmsg_type  = msgType;
+    nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK
+                       | static_cast<uint16_t>(extraFlags);
+    nlh->nlmsg_seq   = seq;
+
+    // rtmsg header — describes the rule family and basic properties.
+    auto* rtm = static_cast<struct rtmsg*>(
+        mnl_nlmsg_put_extra_header(nlh, sizeof(struct rtmsg)));
+    rtm->rtm_family   = AF_INET;
+    rtm->rtm_dst_len  = 0;
+    rtm->rtm_src_len  = 0;
+    rtm->rtm_tos      = 0;
+    rtm->rtm_table    = RT_TABLE_UNSPEC; // actual table via FRA_TABLE attribute
+    rtm->rtm_protocol = RTPROT_BOOT;
+    rtm->rtm_scope    = RT_SCOPE_UNIVERSE;
+    rtm->rtm_type     = RTN_UNICAST;
+    rtm->rtm_flags    = 0;
+
+    mnl_attr_put_u32(nlh, FRA_FWMARK,   fwmark);
+    mnl_attr_put_u32(nlh, FRA_TABLE,    table);
+    mnl_attr_put_u32(nlh, FRA_PRIORITY, kIpRulePriority);
+
+    if (mnl_socket_sendto(nl.get(), nlh, nlh->nlmsg_len) < 0) {
+        logger::error("[ROUTING] mnl_socket_sendto failed: errno={} ({})",
+                      errno, std::strerror(errno));
+        return std::unexpected(RoutingError::NetlinkError);
+    }
+
+    const ssize_t nrecv = mnl_socket_recvfrom(nl.get(), buf, sizeof(buf));
+    if (nrecv < 0) {
+        if ((msgType == RTM_NEWRULE && errno == EEXIST) ||
+            (msgType == RTM_DELRULE && errno == ENOENT)) {
+            return {};
+        }
+        logger::error("[ROUTING] mnl_socket_recvfrom failed: errno={} ({})",
+                      errno, std::strerror(errno));
+        return std::unexpected(RoutingError::NetlinkError);
+    }
+
+    const int ret = mnl_cb_run(buf, static_cast<size_t>(nrecv), seq, portid,
+                               nullptr, nullptr);
+    if (ret < 0) {
+        if ((msgType == RTM_NEWRULE && errno == EEXIST) ||
+            (msgType == RTM_DELRULE && errno == ENOENT)) {
+            return {};
+        }
+        logger::error("[ROUTING] netlink rule op=0x{:04x} failed: errno={} ({})",
+                      msgType, errno, std::strerror(errno));
+        return std::unexpected(RoutingError::NetlinkError);
+    }
+
+    return {};
 }
 
 } // namespace
@@ -274,6 +371,46 @@ std::expected<void, RoutingError> RoutingPolicyManager::addIptablesMarkRules()
     return {};
 }
 
+// ── P2-T3 ─────────────────────────────────────────────────────────
+
+std::expected<void, RoutingError> RoutingPolicyManager::addIpRules()
+{
+    logger::info("[ROUTING] adding ip fwmark rules ({} class(es))", classes_.size());
+
+    for (const auto& cls : classes_) {
+        auto result = sendNetlinkFwmarkRule(
+            RTM_NEWRULE,
+            NLM_F_CREATE | NLM_F_EXCL,
+            cls.mark,
+            static_cast<uint32_t>(cls.routingTable));
+        if (!result) {
+            return result;
+        }
+        logger::info("[ROUTING] ip rule added: id={} fwmark=0x{:x} lookup={}",
+                     cls.id, cls.mark, cls.routingTable);
+    }
+
+    logger::info("[ROUTING] ip fwmark rules ready");
+    return {};
+}
+
+void RoutingPolicyManager::removeIpRules() noexcept
+{
+    for (const auto& cls : classes_) {
+        auto result = sendNetlinkFwmarkRule(
+            RTM_DELRULE, 0,
+            cls.mark,
+            static_cast<uint32_t>(cls.routingTable));
+        if (!result) {
+            logger::warn("[ROUTING] cleanup: failed to remove ip rule: id={} fwmark=0x{:x}",
+                         cls.id, cls.mark);
+        } else {
+            logger::info("[ROUTING] cleanup: ip rule removed: id={} fwmark=0x{:x}",
+                         cls.id, cls.mark);
+        }
+    }
+}
+
 void RoutingPolicyManager::removeIptablesMarkRules() noexcept
 {
     struct xtc_handle* raw = iptc_init(kMangleTable);
@@ -320,8 +457,10 @@ void RoutingPolicyManager::removeIptablesMarkRules() noexcept
 
 void RoutingPolicyManager::cleanup() noexcept
 {
-    // P2-T2: remove iptables rules first (before cgroup dirs disappear)
-    removeIptablesMarkRules();
+    // P2-T3: remove ip rules first
+    removeIpRules();
+
+    // P2-T2: remove iptables rules
     removeIptablesMarkRules();
 
     // P2-T1: remove cgroup directories in reverse order (children before parents).
