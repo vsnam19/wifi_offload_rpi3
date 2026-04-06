@@ -65,6 +65,11 @@ local_conf_header:
     # carries a 'synaptics-killswitch' restricted license.  Must be explicitly
     # accepted to build the firmware package.
     LICENSE_FLAGS_ACCEPTED:append = " synaptics-killswitch"
+
+    # ── cgroup v1 net_cls — required by routing_policy_manager ──────
+    # Kernel ≥ 6.x defaults to cgroup v2 (unified). Force legacy cgroup v1
+    # so /sys/fs/cgroup/net_cls/ is mounted and net_cls classids are available.
+    CMDLINE:append = " systemd.unified_cgroup_hierarchy=0 cgroup_enable=net_cls,memory"
     USER_CLASSES ?= "buildstats"
     PATCHRESOLVE = "noop"
 

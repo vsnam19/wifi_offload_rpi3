@@ -19,10 +19,21 @@ IMAGE_INSTALL:append = " \
     kernel-modules \
     libmnl \
     nlohmann-json \
+    opkg \
 "
 # Note: openssh is installed via IMAGE_FEATURES += ssh-server-openssh above.
 # Note: systemd is selected as init manager via VIRTUAL-RUNTIME_init_manager
 #       in local_conf_header — do NOT add it to IMAGE_INSTALL.
+# Note: busybox-syslog is masked so all syslog() output goes to journald via
+#       the dev-log socket.  Without this, busybox-syslog consumes the syslog
+#       socket and daemon log messages never reach journalctl.
+mask_busybox_syslog() {
+    install -d ${IMAGE_ROOTFS}${sysconfdir}/systemd/system/
+    ln -sf /dev/null ${IMAGE_ROOTFS}${sysconfdir}/systemd/system/busybox-syslog.service
+    ln -sf /dev/null ${IMAGE_ROOTFS}${sysconfdir}/systemd/system/syslog.service
+    ln -sf /dev/null ${IMAGE_ROOTFS}${sysconfdir}/systemd/system/syslog.socket
+}
+ROOTFS_POSTPROCESS_COMMAND += "mask_busybox_syslog;"
 
 # ── Image size ────────────────────────────────────────────────────
 # 256 MB rootfs is ample for a headless daemon image
