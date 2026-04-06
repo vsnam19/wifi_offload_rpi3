@@ -7,17 +7,19 @@
 
 ## ⚡ Active Tasks
 
-**Current phase:** Phase 3 — wpa_supplicant Monitor ✅
-**Current task:** `P4-T1` — Path State FSM: implement states and transitions
+**Current phase:** Phase 4 — Path State FSM ✅
+**Current task:** `P5-T1` — Consumer API Server: Unix domain socket IPC
 
-> Phase 0 ✅ complete (2026-04-06). Phase 1 ✅ complete. P2-T1 ✅. P2-T2 ✅. P2-T3 ✅. P2-T4 ✅. P2-T5 ✅. P2-T6 ✅ (2026-04-07 — verified: mark 0x10 → table 100 → eth0.100). MptcpManager ✅ (2026-04-07 — MPTCP PM endpoints registered/flushed via Generic Netlink). P3-T1..T5 ✅ (2026-04-07 — WpaMonitor: connect/attach/event-loop, event parsing, RSSI extraction, callback interface).
+> Phase 0 ✅. Phase 1 ✅. P2-T1..T6 ✅. MptcpManager ✅. P3-T1..T5 ✅ (WpaMonitor).
+> P4-T1..T5 ✅ (2026-04-07 — PathStateFsm: states/transitions, RSSI thresholds,
+> addDefaultRoute/removeDefaultRoute, 17 unit tests all pass, deployed to RPi).
 >
 > **IPK deploy workflow** (no reflash needed for daemon changes):
 > ```bash
 > ./scripts/deploy.sh root@172.16.45.2
 > ```
 
-**Do this task only. Do not proceed to Phase 4 without completing P3-T5.**
+**Do this task only. Do not proceed to Phase 6 without completing P5-T1.**
 
 ---
 
