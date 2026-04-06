@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.26)
-project(wifi-offload-manager VERSION 0.1.0 LANGUAGES CXX)
+project(wifi-offload-manager VERSION 0.1.0 LANGUAGES C CXX)
 
 # ── C++23 ─────────────────────────────────────────────────────────
 set(CMAKE_CXX_STANDARD 23)
@@ -30,14 +30,16 @@ add_executable(wifi-offload-manager
     src/config/config_loader.cpp
     src/routing/routing_policy_manager.cpp  # P2-T1
     src/mptcp/mptcp_manager.cpp              # Phase 4 (brought forward)
-    # Phase 3+:
-    # src/wpa/wpa_monitor.cpp
+    src/wpa/wpa_ctrl.c                       # P3-T1: upstream wpa_ctrl (unmodified)
+    src/wpa/wpa_monitor.cpp                  # P3-T2..T5
+    # Phase 4+:
     # src/fsm/path_state_fsm.cpp
     # src/api/consumer_api_server.cpp
 )
 
 target_include_directories(wifi-offload-manager PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/wpa   # for wpa_ctrl.c: includes.h, common.h, os.h
     ${LIBMNL_INCLUDE_DIR}
     ${LIBIP4TC_INCLUDE_DIR}
 )
@@ -64,6 +66,8 @@ target_compile_options(wifi-offload-manager PRIVATE
 
 target_compile_definitions(wifi-offload-manager PRIVATE
     _GNU_SOURCE             # for sigaction, POSIX extensions
+    CONFIG_CTRL_IFACE       # enable wpa_ctrl compile
+    CONFIG_CTRL_IFACE_UNIX  # use Unix domain socket
 )
 
 # ── Install ───────────────────────────────────────────────────────

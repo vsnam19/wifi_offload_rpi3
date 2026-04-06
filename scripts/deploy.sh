@@ -58,10 +58,26 @@ REMOTE_IPK="/tmp/$(basename "${IPK_FILE}")"
 
 # ── Step 3: Install and restart ───────────────────────────────────
 echo "==> Installing on target..."
-ssh "${TARGET}" bash -s << EOF
+ssh "${TARGET}" sh << EOF
 set -e
-opkg install --force-reinstall ${REMOTE_IPK}
-rm -f ${REMOTE_IPK}
+cp ${REMOTE_IPK} /tmp/wom_new
+if command -v opkg > /dev/null 2>&1; then
+    opkg install --force-reinstall ${REMOTE_IPK}
+    rm -f ${REMOTE_IPK}
+else
+    # No opkg — extract binary from IPK directly
+    # IPK is an ar archive; data.tar.* contains the files
+    cd /tmp && mkdir -p wom_ipk_extract && cd wom_ipk_extract
+    ar x ${REMOTE_IPK}
+    tar -xf data.tar.* 2>/dev/null || tar -xzf data.tar.gz 2>/dev/null || true
+    if [ -f usr/sbin/wifi-offload-manager ]; then
+        systemctl stop wifi-offload-manager 2>/dev/null || true
+        mv usr/sbin/wifi-offload-manager /usr/sbin/wifi-offload-manager
+        chmod 755 /usr/sbin/wifi-offload-manager
+    fi
+    cd /tmp && rm -rf wom_ipk_extract
+    rm -f ${REMOTE_IPK}
+fi
 systemctl daemon-reload
 systemctl restart wifi-offload-manager
 sleep 1

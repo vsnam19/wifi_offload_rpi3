@@ -67,6 +67,24 @@ enum class MptcpError {
     return "Unknown";
 }
 
+// ── WPA monitor errors ────────────────────────────────────────────
+enum class WpaError {
+    ConnectFailed,    // failed to open wpa_ctrl socket
+    AttachFailed,     // wpa_ctrl_attach() failed
+    RecvError,        // wpa_ctrl_recv() returned error
+    Timeout,          // no events within expected window
+};
+
+[[nodiscard]] constexpr std::string_view toString(WpaError e) noexcept {
+    switch (e) {
+        case WpaError::ConnectFailed: return "ConnectFailed";
+        case WpaError::AttachFailed:  return "AttachFailed";
+        case WpaError::RecvError:     return "RecvError";
+        case WpaError::Timeout:       return "Timeout";
+    }
+    return "Unknown";
+}
+
 // ── API errors ────────────────────────────────────────────────────
 enum class ApiError {
     SocketError,
