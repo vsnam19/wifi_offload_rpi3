@@ -12,6 +12,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_library(LIBMNL_LIBRARY NAMES mnl REQUIRED)
 find_path(LIBMNL_INCLUDE_DIR NAMES libmnl/libmnl.h REQUIRED)
 
+# libip4tc (iptables legacy C API) — for P2-T2 iptables mangle rule management.
+# Provides iptc_init/iptc_append_entry/iptc_commit etc. without shelling out.
+find_library(LIBIP4TC_LIBRARY NAMES ip4tc REQUIRED)
+find_path(LIBIP4TC_INCLUDE_DIR NAMES libiptc/libiptc.h REQUIRED)
+
 # nlohmann/json — header-only; CMake config package (preferred in Yocto sysroot)
 find_package(nlohmann_json QUIET)
 if(NOT nlohmann_json_FOUND)
@@ -34,10 +39,12 @@ add_executable(wifi-offload-manager
 target_include_directories(wifi-offload-manager PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${LIBMNL_INCLUDE_DIR}
+    ${LIBIP4TC_INCLUDE_DIR}
 )
 
 target_link_libraries(wifi-offload-manager PRIVATE
     ${LIBMNL_LIBRARY}
+    ${LIBIP4TC_LIBRARY}
 )
 
 if(nlohmann_json_FOUND)

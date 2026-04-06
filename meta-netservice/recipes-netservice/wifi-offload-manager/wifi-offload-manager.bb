@@ -20,6 +20,7 @@ SRC_URI = " \
 # ── Dependencies ──────────────────────────────────────────────────
 DEPENDS = " \
     libmnl \
+    iptables \
     nlohmann-json \
 "
 

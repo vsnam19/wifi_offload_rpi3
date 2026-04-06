@@ -76,7 +76,15 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    // TODO Phase 2-T2: addIptablesRules
+    // ── Phase 2-T2: add iptables mangle mark rules ────────────────
+    if (auto result = routingMgr.addIptablesMarkRules(); !result) {
+        logger::error("[MAIN] iptables setup failed: {}",
+            netservice::toString(result.error()));
+        routingMgr.cleanup();
+        logger::close();
+        return EXIT_FAILURE;
+    }
+
     // TODO Phase 2-T3: addIpRules
     // TODO Phase 2-T4: addDropRules for strict_isolation
     // TODO Phase 3: pass pathClasses to WpaMonitor
