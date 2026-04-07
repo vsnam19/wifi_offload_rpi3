@@ -7,21 +7,28 @@
 
 ## ⚡ Active Tasks
 
-**Current phase:** Phase 5 — Consumer Registration API ✅
-**Current task:** `P6-T1` — Integration & Hardening: end-to-end test on RPi
+**Current phase:** Phase 7 — MPTCP FOTA Download Test ✅
+**Current task:** `P7-T1` — COMPLETE
 
 > Phase 0 ✅. Phase 1 ✅. P2-T1..T6 ✅. MptcpManager ✅. P3-T1..T5 ✅.
 > P4-T1..T5 ✅ (PathStateFsm, 17 unit tests, deployed to RPi).
-> P5-T1..T7 ✅ (2026-04-07 — ConsumerApiServer: Unix socket server, epoll loop,
-> Register/Unregister/QueryCurrent/PathEvent, cgroup PID assignment,
-> 8 unit tests + mock_consumer, deployed — [API] server started confirmed).
+> P5-T1..T7 ✅ (ConsumerApiServer: Unix socket server, epoll, cgroup PID assignment).
+> P6-T1..T6 ✅ (2026-04-07 — RPi E2E 7/7 PASS, watchdog, SIGHUP reload, ASan clean).
+> P7-T1 ✅ (2026-04-08 — MPTCP FOTA download test: fota_consumer binary deployed,
+>   mptcp_server.py, drop-mptcp-path.sh, run-mptcp-fota-test.sh;
+>   ThroughputSampler thread with /proc/net/mptcp subflow count evidence;
+>   ip mptcp monitor capture + 5s ss --mptcp snapshots from RPi)
 >
 > **IPK deploy workflow** (no reflash needed for daemon changes):
 > ```bash
 > ./scripts/deploy.sh root@172.16.45.2
 > ```
+> **FOTA MPTCP test:**
+> ```bash
+> sudo ./scripts/run-mptcp-fota-test.sh
+> ```
 
-**Do this task only. Phase 6 tasks must be completed one at a time.**
+**All phases complete. Next work item: run FOTA test on hardware and capture results.**
 
 ---
 
@@ -330,6 +337,34 @@ ip route show table 100   # wlan0 route present when WiFi up, gone when down
 | P6-T4 | Config reload via SIGHUP (logs changes; routing not re-applied) | ✅ |
 | P6-T5 | AddressSanitizer: 42 tests pass clean, zero leaks detected | ✅ |
 | P6-T6 | Open Points OP-1..OP-4 documented as stubs in code + PLANNING updated | ✅ |
+
+---
+
+### Phase 7 — MPTCP FOTA Download Test
+**Goal:** Prove multi-path MPTCP resilience under real path disruption with measurable throughput evidence  
+**Status:** ✅ Complete (2026-04-08)  
+**Dependency:** Phase 6 complete, RPi reachable, MPTCP enabled on both sides
+
+| Task | Description | Status |
+|---|---|---|
+| P7-T1 | `fota_consumer.cpp` — MPTCP download consumer: registers with daemon, uses `IPPROTO_MPTCP=262`, ThroughputSampler thread (2s interval, subflow count from `/proc/net/mptcp`), PathEvent handler, DOWNLOAD SUMMARY | ✅ |
+| P7-T2 | `scripts/mptcp_server.py` — MPTCP HTTP server: 1.2 GB sparse firmware image, `IPPROTO_MPTCP` socket, SHA-256 fingerprint endpoint, signal endpoints on all 3 VLANs | ✅ |
+| P7-T3 | `scripts/drop-mptcp-path.sh` — iptables path drop/restore on VLAN interface for configurable duration | ✅ |
+| P7-T4 | `scripts/run-mptcp-fota-test.sh` — full orchestration: configure eth0.300 + MPTCP endpoints on RPi, start server + `ip mptcp monitor`, deploy consumer, drop VLAN 100 at T+10s and VLAN 200 at T+40s, collect evidence: `[TPUT]` samples, `ss --mptcp` snapshots, result report | ✅ |
+| P7-T5 | Cross-compile `fota_consumer` to ARM (`arm-linux-gnueabihf-g++`, ELF 32-bit), deploy to `root@172.16.1.2:/usr/sbin/fota_consumer` | ✅ |
+
+**Evidence collected per test run:**
+- `[TPUT]` lines every 2s: instantaneous Mbps, cumulative Mbps, MPTCP subflow count
+- `[FOTA] PATH EVENT` lines with timestamp and subflow count at disruption moment
+- `ip mptcp monitor` stream from host (ADD_ADDR / RM_ADDR kernel events)
+- `ss --mptcp -i` + `/proc/net/mptcp` snapshots from RPi every 5s
+- Final `DOWNLOAD SUMMARY`: received MB, avg Mbps, path_drop_events, subflows
+- Full report written to `/tmp/mptcp-fota-test-<timestamp>/result.txt`
+
+**To run:**
+```bash
+sudo ./scripts/run-mptcp-fota-test.sh
+```
 
 ---
 

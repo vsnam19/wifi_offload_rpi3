@@ -10,6 +10,28 @@ target_compile_options(mock_consumer PRIVATE
 )
 install(TARGETS mock_consumer RUNTIME DESTINATION ${CMAKE_INSTALL_SBINDIR})
 
+# ── FOTA consumer (MPTCP download demo / P7-T1 E2E) ──────────────
+# Downloads a large firmware image via MPTCP, registers with the daemon for
+# cgroup assignment and PathEvent notifications during the download.
+# Link with OpenSSL for optional SHA-256 verification (USE_OPENSSL=ON).
+option(USE_OPENSSL "Enable SHA-256 verification in fota_consumer" OFF)
+
+add_executable(fota_consumer
+    fota_consumer.cpp
+)
+target_include_directories(fota_consumer PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_compile_options(fota_consumer PRIVATE
+    -Wall -Wextra -Wpedantic -Wno-unused-parameter
+)
+if(USE_OPENSSL)
+    find_package(OpenSSL REQUIRED)
+    target_compile_definitions(fota_consumer PRIVATE USE_OPENSSL)
+    target_link_libraries(fota_consumer PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+endif()
+install(TARGETS fota_consumer RUNTIME DESTINATION ${CMAKE_INSTALL_SBINDIR})
+
 if(NOT BUILD_TESTS)
     return()
 endif()
