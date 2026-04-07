@@ -95,9 +95,12 @@ install(FILES config/path-policies.json
     DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/netservice
 )
 
-# ── Tests (stubbed — activated when Phase 1 unit tests are written) ──
+# ── Tests / mock_consumer ─────────────────────────────────────────
+# tests/ is always included: mock_consumer (E2E helper) is built regardless
+# of BUILD_TESTS. GTest unit tests are only built when BUILD_TESTS=ON.
+# tests/CMakeLists.txt returns early after mock_consumer when BUILD_TESTS=OFF.
 option(BUILD_TESTS "Build unit tests" ON)
 if(BUILD_TESTS)
     enable_testing()
-    add_subdirectory(tests)
 endif()
+add_subdirectory(tests)

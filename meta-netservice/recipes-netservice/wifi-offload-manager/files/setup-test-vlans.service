@@ -1,0 +1,18 @@
+[Unit]
+Description=Test bench VLAN subinterface setup (eth0.100/200/300)
+Documentation=file:///usr/sbin/setup-test-vlans.sh
+# Run after the base eth0 link is up, before network-dependent services
+After=network-pre.target
+Before=network.target wifi-offload-manager.service
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/setup-test-vlans.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=setup-test-vlans
+
+[Install]
+WantedBy=multi-user.target

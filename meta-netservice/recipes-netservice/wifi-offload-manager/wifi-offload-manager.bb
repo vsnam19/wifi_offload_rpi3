@@ -15,6 +15,8 @@ SRC_URI = " \
     file://wifi-offload-manager \
     file://wifi-offload-manager.service \
     file://path-policies.json \
+    file://setup-test-vlans.sh \
+    file://setup-test-vlans.service \
 "
 
 # ── Dependencies ──────────────────────────────────────────────────
@@ -42,7 +44,7 @@ EXTRA_OECMAKE = " \
 "
 
 # ── systemd integration ───────────────────────────────────────────
-SYSTEMD_SERVICE:${PN} = "wifi-offload-manager.service"
+SYSTEMD_SERVICE:${PN} = "wifi-offload-manager.service setup-test-vlans.service"
 SYSTEMD_AUTO_ENABLE:${PN} = "enable"
 
 # ── Install ───────────────────────────────────────────────────────
@@ -51,6 +53,12 @@ do_install:append() {
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${WORKDIR}/wifi-offload-manager.service \
         ${D}${systemd_system_unitdir}/wifi-offload-manager.service
+
+    # Test VLAN setup (oneshot service + script)
+    install -m 0644 ${WORKDIR}/setup-test-vlans.service \
+        ${D}${systemd_system_unitdir}/setup-test-vlans.service
+    install -m 0755 ${WORKDIR}/setup-test-vlans.sh \
+        ${D}${sbindir}/setup-test-vlans.sh
 
     # Default config → /etc/netservice/
     install -d ${D}${sysconfdir}/netservice
