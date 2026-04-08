@@ -161,12 +161,6 @@ struct ThroughputSampler {
     }
 };
 
-static void printProgress([[maybe_unused]] std::size_t received,
-                          [[maybe_unused]] std::size_t total,
-                          [[maybe_unused]] double elapsed_s) {
-    // Progress is now handled by ThroughputSampler; this is a no-op.
-    // Keeping the call sites avoids removing them from the download loop.
-}
 
 // ─────────────────────────── args ────────────────────────────────────────────
 
@@ -466,7 +460,7 @@ int main(int argc, char* argv[]) {
     const auto bp = static_cast<std::size_t>(bodyStart);
     if (bp < headerBuf.size()) {
         const std::size_t preBody = headerBuf.size() - bp;
-        ::write(outFd, headerBuf.data() + bp, preBody);
+        [[maybe_unused]] const ssize_t written = ::write(outFd, headerBuf.data() + bp, preBody);
         received.fetch_add(preBody, std::memory_order_relaxed);
     }
 
@@ -508,7 +502,7 @@ int main(int argc, char* argv[]) {
                                              n, (n < 0 ? strerror(errno) : "EOF"));
                     goto download_done;
                 }
-                ::write(outFd, rowBuf.data(), static_cast<std::size_t>(n));
+                [[maybe_unused]] const ssize_t written = ::write(outFd, rowBuf.data(), static_cast<std::size_t>(n));
                 const std::size_t cur = received.fetch_add(
                     static_cast<std::size_t>(n), std::memory_order_relaxed) + static_cast<std::size_t>(n);
                 (void)cur;  // sampler thread reads received_ directly
