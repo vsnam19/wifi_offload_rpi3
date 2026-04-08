@@ -20,12 +20,17 @@ using namespace netservice;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-static PathClassConfig makeClass(std::string id, uint32_t classid,
+static std::string makeTempCgroupBase(std::string_view prefix) {
+    return std::string{"/tmp/"} + std::string{prefix} +
+           std::to_string(static_cast<unsigned>(::getpid()));
+}
+
+static PathClassConfig makeClass(std::string id, uint32_t classId,
                                  std::string cgroupPath,
                                  uint32_t mark, uint32_t table) {
     PathClassConfig c;
     c.id           = std::move(id);
-    c.classid      = classid;
+    c.classid      = classId;
     c.cgroupPath   = std::move(cgroupPath);
     c.interfaces   = {"eth0"};
     c.mptcpEnabled = false;
@@ -69,9 +74,7 @@ TEST(RoutingPolicyRoutes, RemoveDefaultRouteUnknownIfaceSucceeds) {
 // ── createCgroupHierarchy — filesystem paths in /tmp ─────────────────────────
 
 TEST(RoutingPolicyCgroup, CreateCgroupHierarchyUnderTmp) {
-    const std::string baseDir =
-        std::string{"/tmp/test_routing_cgroup_"} +
-        std::to_string(static_cast<unsigned>(::getpid()));
+    const std::string baseDir    = makeTempCgroupBase("test_routing_cgroup_");
     const std::string cgroupPath = baseDir + "/test_class";
 
     // Pre-create the parent so canonical() resolves it.
@@ -102,9 +105,7 @@ TEST(RoutingPolicyCgroup, CreateCgroupHierarchyUnderTmp) {
 }
 
 TEST(RoutingPolicyCgroup, CreateCgroupHierarchyIdempotent) {
-    const std::string baseDir =
-        std::string{"/tmp/test_routing_cgroup_idem_"} +
-        std::to_string(static_cast<unsigned>(::getpid()));
+    const std::string baseDir    = makeTempCgroupBase("test_routing_cgroup_idem_");
     const std::string cgroupPath = baseDir + "/cls_a";
 
     std::filesystem::create_directories(baseDir);

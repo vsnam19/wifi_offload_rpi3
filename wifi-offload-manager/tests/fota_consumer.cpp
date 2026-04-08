@@ -460,7 +460,7 @@ int main(int argc, char* argv[]) {
     const auto bp = static_cast<std::size_t>(bodyStart);
     if (bp < headerBuf.size()) {
         const std::size_t preBody = headerBuf.size() - bp;
-        [[maybe_unused]] const ssize_t written = ::write(outFd, headerBuf.data() + bp, preBody);
+        [[maybe_unused]] const ssize_t writtenHeader = ::write(outFd, headerBuf.data() + bp, preBody);
         received.fetch_add(preBody, std::memory_order_relaxed);
     }
 
@@ -502,7 +502,7 @@ int main(int argc, char* argv[]) {
                                              n, (n < 0 ? strerror(errno) : "EOF"));
                     goto download_done;
                 }
-                [[maybe_unused]] const ssize_t written = ::write(outFd, rowBuf.data(), static_cast<std::size_t>(n));
+                [[maybe_unused]] const ssize_t writtenBody = ::write(outFd, rowBuf.data(), static_cast<std::size_t>(n));
                 const std::size_t cur = received.fetch_add(
                     static_cast<std::size_t>(n), std::memory_order_relaxed) + static_cast<std::size_t>(n);
                 (void)cur;  // sampler thread reads received_ directly
