@@ -13,6 +13,10 @@ __pycache__/
 *.swp
 *.swo
 *~
+.vscode/
+
+# Local build output (CMake native builds, not Yocto)
+build_local/
 
 # OS artifacts
 .DS_Store
