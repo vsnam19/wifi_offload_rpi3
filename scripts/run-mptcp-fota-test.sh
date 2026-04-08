@@ -28,6 +28,12 @@ HOST_IFACE="${HOST_IFACE:-enp2s0}"
 RPI_SSH="${RPI_SSH:-root@172.16.1.2}"
 SERVER_IP="${SERVER_IP:-172.16.1.1}"
 SERVER_PORT="${SERVER_PORT:-8080}"
+
+# SSH/SCP must run as the invoking user — root (sudo) has no RPi keys.
+# SUDO_USER is set by sudo; fall back to $USER when run without sudo.
+_SSHUSER="${SUDO_USER:-$USER}"
+_SSH="sudo -u ${_SSHUSER} ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no"
+_SCP="sudo -u ${_SSHUSER} scp -o BatchMode=yes -o StrictHostKeyChecking=no"
 SIZE_GB="${SIZE_GB:-1.2}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_DIR="/tmp/mptcp-fota-test-$(date +%Y%m%d-%H%M%S)"
@@ -69,24 +75,24 @@ for vid in 100 200; do
     fi
 done
 
-if ! ssh -o ConnectTimeout=5 -o BatchMode=yes "${RPI_SSH}" "echo ok" > /dev/null 2>&1; then
+if ! ${_SSH} "${RPI_SSH}" "echo ok" > /dev/null 2>&1; then
     err "RPi unreachable at ${RPI_SSH}"
     exit 1
 fi
 
-if ! ssh "${RPI_SSH}" "test -x /usr/sbin/fota_consumer" 2>/dev/null; then
+if ! ${_SSH} "${RPI_SSH}" "test -x /usr/sbin/fota_consumer" 2>/dev/null; then
     warn "fota_consumer not on RPi — deploying from /tmp/fota_consumer_arm …"
     if [[ ! -f /tmp/fota_consumer_arm ]]; then
         err "/tmp/fota_consumer_arm not found — run the cross-compile step first"
         exit 1
     fi
-    scp /tmp/fota_consumer_arm "${RPI_SSH}:/usr/sbin/fota_consumer"
-    ssh "${RPI_SSH}" "chmod 755 /usr/sbin/fota_consumer"
+    ${_SCP} /tmp/fota_consumer_arm "${RPI_SSH}:/usr/sbin/fota_consumer"
+    ${_SSH} "${RPI_SSH}" "chmod 755 /usr/sbin/fota_consumer"
     info "fota_consumer deployed to RPi"
 fi
 
 MPTCP_HOST=$(cat /proc/sys/net/mptcp/enabled 2>/dev/null || echo 0)
-MPTCP_RPI=$(ssh "${RPI_SSH}" "cat /proc/sys/net/mptcp/enabled 2>/dev/null || echo 0")
+MPTCP_RPI=$(${_SSH} "${RPI_SSH}" "cat /proc/sys/net/mptcp/enabled 2>/dev/null || echo 0")
 info "MPTCP: host=${MPTCP_HOST}  rpi=${MPTCP_RPI}"
 if [[ "${MPTCP_HOST}" != "1" || "${MPTCP_RPI}" != "1" ]]; then
     err "MPTCP not enabled on both sides"
@@ -98,7 +104,7 @@ fi
 # ─────────────────────────────────────────────────────────────────────────────
 info "=== STEP 1: configuring RPi MPTCP endpoints ==="
 
-ssh "${RPI_SSH}" '
+${_SSH} "${RPI_SSH}" '
 set -e
 modprobe 8021q 2>/dev/null || true
 
@@ -161,7 +167,7 @@ info "firmware SHA-256 (head+tail): ${EXPECTED_SHA:-<unavailable>}"
 info "=== STEP 4: starting fota_consumer on RPi ==="
 T_START=$(date +%s)
 
-ssh "${RPI_SSH}" "
+${_SSH} "${RPI_SSH}" "
 nohup fota_consumer \
     --server ${SERVER_IP} \
     --port   ${SERVER_PORT} \
@@ -185,14 +191,14 @@ info "fota_consumer started on RPi PID=${RPI_PID}"
             echo ""
             echo "=== snapshot #${snap}  ${TS} ==="
             echo "--- ss --mptcp -i (RPi) ---"
-            ssh "${RPI_SSH}" "ss --mptcp -i 2>/dev/null || ss -t -i 2>/dev/null | head -30" 2>/dev/null
+            ${_SSH} "${RPI_SSH}" "ss --mptcp -i 2>/dev/null || ss -t -i 2>/dev/null | head -30" 2>/dev/null
             echo "--- /proc/net/mptcp (RPi) ---"
-            ssh "${RPI_SSH}" "cat /proc/net/mptcp 2>/dev/null || echo 'N/A'" 2>/dev/null
+            ${_SSH} "${RPI_SSH}" "cat /proc/net/mptcp 2>/dev/null || echo 'N/A'" 2>/dev/null
             echo "--- ip mptcp endpoint (RPi) ---"
-            ssh "${RPI_SSH}" "ip mptcp endpoint show 2>/dev/null" 2>/dev/null
+            ${_SSH} "${RPI_SSH}" "ip mptcp endpoint show 2>/dev/null" 2>/dev/null
         } >> "${LOG_DIR}/mptcp_snapshots.log" 2>/dev/null
         # Stop if download done (check by looking for SUCCESS/INCOMPLETE in log)
-        ssh "${RPI_SSH}" "grep -q 'SUCCESS\|INCOMPLETE\|SUMMARY' /tmp/fota_consumer.log 2>/dev/null" 2>/dev/null && break
+        ${_SSH} "${RPI_SSH}" "grep -q 'SUCCESS\|INCOMPLETE\|SUMMARY' /tmp/fota_consumer.log 2>/dev/null" 2>/dev/null && break
     done
 } &
 SNAPSHOT_PID=$!
@@ -243,12 +249,12 @@ info "path VLAN 200 restored after $((T_RESTORE2 - T_DROP2))s"
 info "=== STEP 7: waiting for download to complete (max 600s) ==="
 DEADLINE=$(( $(date +%s) + 600 ))
 while (( $(date +%s) < DEADLINE )); do
-    if ssh "${RPI_SSH}" "test -f /tmp/fota_consumer.log && grep -q 'SUCCESS\|INCOMPLETE\|MISMATCH' /tmp/fota_consumer.log" 2>/dev/null; then
+    if ${_SSH} "${RPI_SSH}" "test -f /tmp/fota_consumer.log && grep -q 'SUCCESS\|INCOMPLETE\|MISMATCH' /tmp/fota_consumer.log" 2>/dev/null; then
         break
     fi
     sleep 5
     # Print progress line from RPi log
-    PROGRESS=$(ssh "${RPI_SSH}" "tail -1 /tmp/fota_consumer.log 2>/dev/null" || echo "")
+    PROGRESS=$(${_SSH} "${RPI_SSH}" "tail -1 /tmp/fota_consumer.log 2>/dev/null" || echo "")
     if [[ -n "${PROGRESS}" ]]; then
         echo -e "  ${PROGRESS}"
     fi
@@ -266,15 +272,15 @@ kill "${MPTCP_MONITOR_PID}" 2>/dev/null || true
 info "=== STEP 8: collecting results ==="
 
 # Collect fota_consumer log
-scp "${RPI_SSH}:/tmp/fota_consumer.log" "${LOG_DIR}/fota_consumer.log" 2>/dev/null || true
+${_SCP} "${RPI_SSH}:/tmp/fota_consumer.log" "${LOG_DIR}/fota_consumer.log" 2>/dev/null || true
 
 # File size on RPi
-DOWNLOADED_SIZE=$(ssh "${RPI_SSH}" "stat -c%s /tmp/firmware_downloaded.img 2>/dev/null || echo 0")
-EXPECTED_SIZE=$(ssh "${RPI_SSH}" "cat /proc/\$(cat /tmp/fota_consumer.log | grep -o 'received=[0-9]*' | tail -1 | cut -d= -f2) 2>/dev/null || echo ''" || echo "")
+DOWNLOADED_SIZE=$(${_SSH} "${RPI_SSH}" "stat -c%s /tmp/firmware_downloaded.img 2>/dev/null || echo 0")
+EXPECTED_SIZE=$(${_SSH} "${RPI_SSH}" "cat /proc/\$(cat /tmp/fota_consumer.log | grep -o 'received=[0-9]*' | tail -1 | cut -d= -f2) 2>/dev/null || echo ''" || echo "")
 
 # Check success
-CONSUMER_EXIT=$(ssh "${RPI_SSH}" "grep -c 'SUCCESS' /tmp/fota_consumer.log 2>/dev/null || echo 0")
-CONSUMER_INCOMPLETE=$(ssh "${RPI_SSH}" "grep -c 'INCOMPLETE' /tmp/fota_consumer.log 2>/dev/null || echo 0")
+CONSUMER_EXIT=$(${_SSH} "${RPI_SSH}" "grep -c 'SUCCESS' /tmp/fota_consumer.log 2>/dev/null || echo 0")
+CONSUMER_INCOMPLETE=$(${_SSH} "${RPI_SSH}" "grep -c 'INCOMPLETE' /tmp/fota_consumer.log 2>/dev/null || echo 0")
 
 # Collect server log
 head -50 "${LOG_DIR}/server.log" > "${LOG_DIR}/server_excerpt.log" 2>/dev/null || true
