@@ -1,0 +1,125 @@
+name: CI — Build & Unit Tests
+
+on:
+  push:
+    branches: ["master", "main"]
+    paths:
+      - "wifi-offload-manager/**"
+      - ".github/workflows/ci.yml"
+  pull_request:
+    branches: ["master", "main"]
+    paths:
+      - "wifi-offload-manager/**"
+      - ".github/workflows/ci.yml"
+
+jobs:
+  build-and-test:
+    name: Build + Unit Tests (GCC 13, C++23)
+    runs-on: ubuntu-24.04
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Install GCC 13 + build dependencies ─────────────────────────────
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            gcc-13 g++-13 cmake ninja-build \
+            libmnl-dev \
+            libip4tc-dev \
+            libsystemd-dev \
+            nlohmann-json3-dev \
+            libgtest-dev \
+            ca-certificates
+          # Make GCC 13 the default
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-13 100
+
+      # ── 3. Print toolchain versions ────────────────────────────────────────
+      - name: Toolchain info
+        run: |
+          g++ --version
+          cmake --version
+          ninja --version
+
+      # ── 4. Configure (Release + tests) ────────────────────────────────────
+      - name: CMake configure
+        working-directory: wifi-offload-manager
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_STANDARD=23 \
+            -DBUILD_TESTS=ON \
+            -DCMAKE_CXX_FLAGS="-Wall -Wextra -Werror -Wpedantic -Wno-unused-parameter"
+
+      # ── 5. Build daemon + all test binaries ────────────────────────────────
+      - name: Build
+        working-directory: wifi-offload-manager
+        run: cmake --build build --parallel $(nproc)
+
+      # ── 6. Run unit tests via CTest ────────────────────────────────────────
+      - name: Run unit tests
+        working-directory: wifi-offload-manager/build
+        run: ctest --output-on-failure --parallel $(nproc)
+
+      # ── 7. Upload test results on failure ─────────────────────────────────
+      - name: Upload test logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: wifi-offload-manager/build/Testing/
+
+  # ── ASan build ─────────────────────────────────────────────────────────────
+  asan:
+    name: Build + Unit Tests (AddressSanitizer)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            gcc-13 g++-13 cmake ninja-build \
+            libmnl-dev \
+            libip4tc-dev \
+            libsystemd-dev \
+            nlohmann-json3-dev \
+            libgtest-dev
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-13 100
+
+      - name: CMake configure (ASan)
+        working-directory: wifi-offload-manager
+        run: |
+          cmake -B build_asan -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_STANDARD=23 \
+            -DBUILD_TESTS=ON \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer \
+              -Wall -Wextra -Wpedantic -Wno-unused-parameter"  \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+
+      - name: Build (ASan)
+        working-directory: wifi-offload-manager
+        run: cmake --build build_asan --parallel $(nproc)
+
+      - name: Run unit tests (ASan)
+        working-directory: wifi-offload-manager/build_asan
+        env:
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:abort_on_error=1
+        run: ctest --output-on-failure --parallel $(nproc)
+
+      - name: Upload ASan test logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: asan-test-logs
+          path: wifi-offload-manager/build_asan/Testing/
