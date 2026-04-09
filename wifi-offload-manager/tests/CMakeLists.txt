@@ -88,8 +88,24 @@ target_compile_options(test_consumer_api PRIVATE
 add_test(NAME test_consumer_api COMMAND test_consumer_api)
 
 # ── Routing Policy tests (Phase 2) ───────────────────────────────
-# add_executable(test_routing_policy
-#     test_routing_policy.cpp
-#     ${CMAKE_SOURCE_DIR}/src/routing/routing_policy_manager.cpp
-# )
-# ...
+add_executable(test_routing_policy
+    test_routing_policy.cpp
+    ${CMAKE_SOURCE_DIR}/src/routing/routing_policy_manager.cpp
+)
+target_include_directories(test_routing_policy PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${LIBMNL_INCLUDE_DIR}
+    ${LIBIP4TC_INCLUDE_DIR}
+)
+target_link_libraries(test_routing_policy PRIVATE
+    GTest::gtest_main
+    ${LIBMNL_LIBRARY}
+    ${LIBIP4TC_LIBRARY}
+)
+target_compile_options(test_routing_policy PRIVATE
+    -Wall -Wextra -Wpedantic -Wno-unused-parameter
+)
+target_compile_definitions(test_routing_policy PRIVATE
+    _GNU_SOURCE
+)
+add_test(NAME test_routing_policy COMMAND test_routing_policy)
