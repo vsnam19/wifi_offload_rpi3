@@ -460,8 +460,22 @@ int main(int argc, char* argv[]) {
     const auto bp = static_cast<std::size_t>(bodyStart);
     if (bp < headerBuf.size()) {
         const std::size_t preBody = headerBuf.size() - bp;
-        [[maybe_unused]] const ssize_t writtenHeader = ::write(outFd, headerBuf.data() + bp, preBody);
-        received.fetch_add(preBody, std::memory_order_relaxed);
+        std::size_t remaining = preBody;
+        std::size_t writtenTotal = 0;
+        while (remaining > 0) {
+            const ssize_t writtenHeader = ::write(outFd, headerBuf.data() + bp + writtenTotal, remaining);
+            if (writtenHeader < 0) {
+                if (errno == EINTR) { continue; }
+                std::cerr << std::format("[FOTA] failed to write buffered body bytes: errno={} ({})\n",
+                                         errno, std::strerror(errno));
+                sampler.stop(); ::close(dataFd); ::close(outFd);
+                unregisterFromDaemon(ctl);
+                return 1;
+            }
+            writtenTotal += static_cast<std::size_t>(writtenHeader);
+            remaining    -= static_cast<std::size_t>(writtenHeader);
+        }
+        received.fetch_add(writtenTotal, std::memory_order_relaxed);
     }
 
     // epoll on dataFd + ctlFd for concurrent PathEvent notifications
@@ -502,10 +516,22 @@ int main(int argc, char* argv[]) {
                                              n, (n < 0 ? strerror(errno) : "EOF"));
                     goto download_done;
                 }
-                [[maybe_unused]] const ssize_t writtenBody = ::write(outFd, rowBuf.data(), static_cast<std::size_t>(n));
-                const std::size_t cur = received.fetch_add(
-                    static_cast<std::size_t>(n), std::memory_order_relaxed) + static_cast<std::size_t>(n);
-                (void)cur;  // sampler thread reads received_ directly
+                {
+                    std::size_t remaining = static_cast<std::size_t>(n);
+                    std::size_t writtenTotal = 0;
+                    while (remaining > 0) {
+                        const ssize_t writtenBody = ::write(outFd, rowBuf.data() + writtenTotal, remaining);
+                        if (writtenBody < 0) {
+                            if (errno == EINTR) { continue; }
+                            std::cerr << std::format("[FOTA] write failed: errno={} ({})\n",
+                                                     errno, std::strerror(errno));
+                            goto download_done;
+                        }
+                        writtenTotal += static_cast<std::size_t>(writtenBody);
+                        remaining    -= static_cast<std::size_t>(writtenBody);
+                    }
+                    received.fetch_add(writtenTotal, std::memory_order_relaxed);
+                }
 
             } else if (evs[i].data.fd == ctl.fd) {
                 // PathEvent notification from daemon

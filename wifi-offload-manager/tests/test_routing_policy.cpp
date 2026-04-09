@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <unistd.h>
 
 using namespace netservice;
 
@@ -123,10 +124,15 @@ TEST(RoutingPolicyCgroup, CreateCgroupHierarchyIdempotent) {
 }
 
 TEST(RoutingPolicyCgroup, CreateCgroupHierarchyBadParentFails) {
-    // Parent directory does not exist and cannot be resolved.
+    // Use a path whose parent does not exist, so canonical() will fail.
+    const std::string pathWithMissingParent =
+        makeTempCgroupBase("test_routing_bad_parent_") + "/no_such_subdir";
+    // Ensure the path is truly absent.
+    std::filesystem::remove_all(pathWithMissingParent);
+
     std::vector<PathClassConfig> classes = {
         makeClass("bad", 0x00100001u,
-                  "/nonexistent_root_dir/subdir/cls",
+                  pathWithMissingParent + "/cls",
                   0x10u, 100)
     };
     RoutingPolicyManager mgr{std::span<const PathClassConfig>{classes}};
@@ -139,34 +145,33 @@ TEST(RoutingPolicyCgroup, CreateCgroupHierarchyBadParentFails) {
 // ── addIptablesMarkRules / addIpRules — unprivileged failure ─────────────────
 
 TEST(RoutingPolicyUnprivileged, AddIptablesMarkRulesFailsWithoutRoot) {
+    if (::geteuid() == 0) {
+        GTEST_SKIP() << "skipped: running as root";
+    }
+
     std::vector<PathClassConfig> classes = {
         makeClass("cls", 0x00100001u, "/sys/fs/cgroup/net_cls/cls", 0x10u, 100)
     };
     RoutingPolicyManager mgr{std::span<const PathClassConfig>{classes}};
 
-    auto result = mgr.addIptablesMarkRules();
     // iptc_init() fails without CAP_NET_ADMIN → IptablesError expected.
-    // (If running as root, this test is skipped.)
-    if (::geteuid() != 0) {
-        ASSERT_FALSE(result.has_value());
-        EXPECT_EQ(result.error(), RoutingError::IptablesError);
-    } else {
-        GTEST_SKIP() << "skipped: running as root";
-    }
+    auto result = mgr.addIptablesMarkRules();
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error(), RoutingError::IptablesError);
 }
 
 TEST(RoutingPolicyUnprivileged, AddIpRulesFailsWithoutRoot) {
+    if (::geteuid() == 0) {
+        GTEST_SKIP() << "skipped: running as root";
+    }
+
     std::vector<PathClassConfig> classes = {
         makeClass("cls", 0x00100001u, "/sys/fs/cgroup/net_cls/cls", 0x10u, 100)
     };
     RoutingPolicyManager mgr{std::span<const PathClassConfig>{classes}};
 
     auto result = mgr.addIpRules();
-    if (::geteuid() != 0) {
-        ASSERT_FALSE(result.has_value());
-        EXPECT_EQ(result.error(), RoutingError::NetlinkError);
-    } else {
-        GTEST_SKIP() << "skipped: running as root";
-    }
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error(), RoutingError::NetlinkError);
 }
 
